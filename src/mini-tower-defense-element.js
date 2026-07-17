@@ -12,7 +12,12 @@ import { AudioManager } from './audio/audio-manager.js';
 import { getI18n } from './config/i18n.js';
 import { PLAYER_CONFIG, TOWER_STATS, TowerType } from './config/game-config.js';
 import { hitTestTowerSlot } from './render/coordinates.js';
-import { TOWER_SLOTS } from './config/map-config.js';
+import { TOWER_SLOTS, PATH_POINTS } from './config/map-config.js';
+import { createPath } from './engine/path.js';
+import { GameEngine } from './engine/game-engine.js';
+import { createGameLoop } from './engine/game-loop.js';
+import { CanvasRenderer } from './render/canvas-renderer.js';
+import { PointerController } from './input/pointer-controller.js';
 
 const ATTRIBUTES = {
   WIDTH: 'width',
@@ -51,8 +56,17 @@ class MiniTowerDefense extends HTMLElement {
     this._locale = DEFAULT_LOCALE;
     this._audio = new AudioManager();
 
-    // Pointer controller reference
+    // Game engine and loop
+    this._engine = null;
+    this._gameLoop = null;
+    this._renderer = null;
     this._pointerController = null;
+
+    // Path model
+    this._path = null;
+
+    // Canvas reference
+    this._canvas = null;
 
     // Initialize game snapshot with idle state values
     this._gameSnapshot = {
@@ -61,7 +75,11 @@ class MiniTowerDefense extends HTMLElement {
       gold: PLAYER_CONFIG.initialGold,
       wave: 0,
       totalWaves: 5,
-      towers: []
+      towers: [],
+      enemies: [],
+      projectiles: [],
+      effects: [],
+      towerSlots: []
     };
 
     // Initialize Shadow DOM content
@@ -78,6 +96,15 @@ class MiniTowerDefense extends HTMLElement {
     const templateDiv = document.createElement('div');
     templateDiv.innerHTML = getTemplate();
     this.shadowRoot.appendChild(templateDiv);
+
+    // Get canvas reference
+    this._canvas = this.shadowRoot.querySelector('canvas');
+
+    // Initialize path model
+    this._path = createPath(PATH_POINTS);
+
+    // Initialize renderer lazily (only when actually rendering, to support test environments)
+    // The renderer will be created on first render call
 
     // Initialize HUD controller
     const i18n = getI18n(this._locale);
@@ -155,28 +182,25 @@ class MiniTowerDefense extends HTMLElement {
    * @param {string} towerType
    */
   _handleBuildTower(slotIndex, towerType) {
-    const spec = TOWER_STATS[towerType];
-    if (this._gameSnapshot.gold >= spec.cost) {
-      this._gameSnapshot.gold -= spec.cost;
-      const slot = TOWER_SLOTS[slotIndex];
-      const newTower = {
-        id: `tower-slot-${slotIndex}`,
-        type: towerType,
-        slotId: slotIndex,
-        x: slot.x,
-        y: slot.y,
-        cost: spec.cost,
-        damage: spec.damage,
-        range: spec.range,
-        attackInterval: spec.interval,
-        projectileSpeed: spec.projectileSpeed,
-        alive: true
+    if (!this._engine) {
+      return;
+    }
+
+    const result = this._engine.buildTower(slotIndex, towerType);
+    if (result.ok) {
+      // Update internal snapshot from engine state
+      this._gameSnapshot = {
+        ...this._gameSnapshot,
+        gold: result.snapshot.gold,
+        towers: result.snapshot.towers,
       };
-      this._gameSnapshot.towers = [...this._gameSnapshot.towers, newTower];
-      this._buildMenu.hide();
       this._updateHUD(this._gameSnapshot);
+      this._buildMenu.hide();
       this._audio.play('build');
-      this._dispatchEvent('tower-built', { towerId: newTower.id, towerType });
+      const tower = result.snapshot.towers.find(t => t.slotId === slotIndex);
+      if (tower) {
+        this._dispatchEvent('tower-built', { towerId: tower.id, towerType });
+      }
     }
   }
 
@@ -185,16 +209,22 @@ class MiniTowerDefense extends HTMLElement {
    * @param {number} slotIndex
    */
   _handleSellTower(slotIndex) {
-    const towerId = `tower-slot-${slotIndex}`;
-    const tower = this._gameSnapshot.towers.find(t => t.id === towerId);
-    if (tower) {
-      const refund = Math.floor(tower.cost * PLAYER_CONFIG.sellRefundRate);
-      this._gameSnapshot.gold += refund;
-      this._gameSnapshot.towers = this._gameSnapshot.towers.filter(t => t.id !== towerId);
-      this._buildMenu.hide();
+    if (!this._engine) {
+      return;
+    }
+
+    const result = this._engine.sellTower(slotIndex);
+    if (result.ok) {
+      // Update internal snapshot from engine state
+      this._gameSnapshot = {
+        ...this._gameSnapshot,
+        gold: result.snapshot.gold,
+        towers: result.snapshot.towers,
+      };
       this._updateHUD(this._gameSnapshot);
+      this._buildMenu.hide();
       this._audio.play('sell');
-      this._dispatchEvent('tower-sold', { towerId, refund });
+      this._dispatchEvent('tower-sold', { towerId: `tower-slot-${slotIndex}`, refund: result.refund });
     }
   }
 
@@ -286,57 +316,281 @@ class MiniTowerDefense extends HTMLElement {
   }
 
   // Methods
+
+  /**
+   * Initialize the game engine and start the game loop
+   */
+  _initGameEngine() {
+    if (this._engine) {
+      return;
+    }
+
+    this._engine = new GameEngine();
+  }
+
+  /**
+   * Create and start the game loop
+   */
+  _startGameLoop() {
+    if (this._gameLoop) {
+      return;
+    }
+
+    const now = () => performance.now();
+    const requestFrame = (cb) => requestAnimationFrame(cb);
+    const cancelFrame = (id) => cancelAnimationFrame(id);
+
+    this._gameLoop = createGameLoop({
+      update: (deltaSeconds) => this._update(deltaSeconds),
+      render: (interpolation) => this._render(interpolation),
+      now,
+      requestFrame,
+      cancelFrame,
+    });
+
+    this._gameLoop.start();
+  }
+
+  /**
+   * Update game state for fixed timestep
+   * @param {number} deltaSeconds
+   */
+  _update(deltaSeconds) {
+    if (!this._engine || !this._path) {
+      return;
+    }
+
+    const snapshot = this._engine.getSnapshot();
+    const enemies = [...snapshot.enemies];
+
+    // Tick engine
+    const result = this._engine.tick(deltaSeconds, enemies, this._path);
+
+    // Process engine events
+    for (const event of result.events) {
+      switch (event.type) {
+        case 'wave-start':
+          this._audio.play('wave-start');
+          this._dispatchEvent('wave-start', { wave: event.wave });
+          break;
+        case 'wave-complete':
+          this._dispatchEvent('wave-complete', { wave: event.wave });
+          break;
+        case 'tower-attack':
+          // Could play attack sound here
+          break;
+        case 'projectile-hit':
+          // Could play hit sound here
+          break;
+        case 'enemy-killed':
+          this._audio.play('enemy-killed');
+          this._dispatchEvent('enemy-killed', { enemyId: event.enemyId, reward: event.reward });
+          break;
+        case 'enemy-leak':
+          this._audio.play('enemy-leak');
+          this._dispatchEvent('enemy-leaked', { enemyId: event.enemyId, livesRemaining: event.livesRemaining });
+          break;
+        case 'game-win':
+          this._audio.play('victory');
+          this._dispatchEvent('game-win', {});
+          break;
+        case 'game-lose':
+          this._audio.play('defeat');
+          this._dispatchEvent('game-lose', {});
+          break;
+      }
+    }
+
+    // Update enemies (remove dead ones)
+    const updatedEnemies = result.enemies.filter(e => e.alive);
+
+    // Update snapshot
+    const engineSnapshot = this._engine.getSnapshot();
+    this.updateSnapshot({
+      ...engineSnapshot,
+      enemies: updatedEnemies,
+      path: this._path,
+      towerSlots: this._engine.towerSlots,
+    });
+  }
+
+  /**
+   * Render the game
+   * @param {number} interpolation
+   */
+  _render(interpolation) {
+    if (!this._gameSnapshot) {
+      return;
+    }
+
+    // Lazily initialize renderer (canvas.getContext not available in test envs)
+    if (!this._renderer && this._canvas) {
+      try {
+        // Check if canvas supports getContext
+        const ctx = this._canvas.getContext('2d');
+        if (ctx) {
+          this._renderer = new CanvasRenderer(this._canvas);
+          this._renderer.resize(this.width, this.height, window.devicePixelRatio || 1);
+        }
+      } catch (e) {
+        // Canvas not supported (e.g., in test environments)
+        return;
+      }
+    }
+
+    if (!this._renderer) {
+      return;
+    }
+
+    try {
+      // Prepare snapshot for renderer
+      const renderSnapshot = {
+        ...this._gameSnapshot,
+        path: this._path,
+        towerSlots: this._engine ? this._engine.towerSlots : [],
+      };
+      this._renderer.render(renderSnapshot, interpolation);
+    } catch (error) {
+      console.error('Render error:', error);
+      this._dispatchEvent('game-error', { error: error.message });
+      this.pause();
+    }
+  }
+
   start() {
+    if (this._state === 'destroyed') {
+      return;
+    }
+
+    this._initGameEngine();
+    this._startGameLoop();
+
+    // Start the game engine
+    const result = this._engine.start();
+    for (const event of result.events) {
+      if (event.type === 'game-start') {
+        this._dispatchEvent('game-start', {});
+      }
+    }
+
+    // Initialize pointer controller on first start
+    if (!this._pointerController && this._canvas) {
+      this._pointerController = new PointerController(
+        this._canvas,
+        { width: 960, height: 540 },
+        (worldPos) => this._handleTowerSlotClick(worldPos)
+      );
+    }
+
+    // Update state
     this._state = 'running';
     this._gameSnapshot.state = 'running';
     this._audio.play('wave-start');
-    this._dispatchEvent('game-start', {});
   }
 
   pause() {
+    if (this._state !== 'running') {
+      return;
+    }
+
     this._state = 'paused';
     this._gameSnapshot.state = 'paused';
+
+    if (this._gameLoop) {
+      this._gameLoop.pause();
+    }
+
     if (this._hud) {
       this._hud.setPaused(true);
     }
     if (this._modal) {
       this._modal.showPaused();
     }
+
+    this._dispatchEvent('game-pause', {});
   }
 
   resume() {
+    if (this._state !== 'paused') {
+      return;
+    }
+
     this._state = 'running';
     this._gameSnapshot.state = 'running';
+
+    if (this._gameLoop) {
+      this._gameLoop.resume();
+    }
+
     if (this._hud) {
       this._hud.setPaused(false);
     }
     if (this._modal) {
       this._modal.hide();
     }
+
+    this._dispatchEvent('game-resume', {});
   }
 
   restart() {
+    // Stop and cleanup game loop
+    if (this._gameLoop) {
+      this._gameLoop.stop();
+      this._gameLoop = null;
+    }
+
+    // Reset engine
+    if (this._engine) {
+      this._engine.reset();
+    }
+
+    // Reset state
     this._state = 'idle';
-    this._gameSnapshot.state = 'idle';
-    this._gameSnapshot.lives = PLAYER_CONFIG.initialLives;
-    this._gameSnapshot.gold = PLAYER_CONFIG.initialGold;
-    this._gameSnapshot.wave = 0;
-    this._gameSnapshot.towers = [];
+    this._gameSnapshot = {
+      state: 'idle',
+      lives: PLAYER_CONFIG.initialLives,
+      gold: PLAYER_CONFIG.initialGold,
+      wave: 0,
+      totalWaves: 5,
+      towers: [],
+      enemies: [],
+      projectiles: [],
+      effects: [],
+      towerSlots: this._engine ? this._engine.towerSlots : [],
+    };
+
+    // Reset UI
     if (this._modal) {
       this._modal.hide();
     }
     if (this._buildMenu) {
       this._buildMenu.hide();
     }
+    if (this._hud) {
+      this._hud.update(this._gameSnapshot);
+    }
+
+    // Dispatch restart event
+    this._dispatchEvent('game-restart', {});
   }
 
   destroy() {
     this._state = 'destroyed';
     this._gameSnapshot.state = 'destroyed';
+
+    // Stop game loop
+    if (this._gameLoop) {
+      this._gameLoop.stop();
+      this._gameLoop = null;
+    }
+
+    // Release audio
     if (this._audio) {
       this._audio.destroy();
       this._audio = null;
     }
+
+    // Cleanup UI controllers
     if (this._hud) {
       this._hud.destroy();
       this._hud = null;
@@ -349,10 +603,20 @@ class MiniTowerDefense extends HTMLElement {
       this._modal.destroy();
       this._modal = null;
     }
+
+    // Cleanup pointer controller
     if (this._pointerController) {
       this._pointerController.destroy();
       this._pointerController = null;
     }
+
+    // Cleanup renderer
+    if (this._renderer) {
+      this._renderer = null;
+    }
+
+    // Cleanup engine
+    this._engine = null;
   }
 
   /**
@@ -370,6 +634,10 @@ class MiniTowerDefense extends HTMLElement {
       wave: snapshot.wave,
       totalWaves: snapshot.totalWaves,
       towers: snapshot.towers || this._gameSnapshot.towers,
+      enemies: snapshot.enemies || this._gameSnapshot.enemies,
+      projectiles: snapshot.projectiles || this._gameSnapshot.projectiles,
+      effects: snapshot.effects || this._gameSnapshot.effects,
+      towerSlots: snapshot.towerSlots || this._gameSnapshot.towerSlots,
       elapsedMs: snapshot.elapsedMs
     };
 
@@ -395,6 +663,9 @@ class MiniTowerDefense extends HTMLElement {
         this._dispatchEvent('wave-start', { wave: snapshot.wave });
       }
     }
+
+    // Update HUD
+    this._updateHUD(this._gameSnapshot);
   }
 
   /**
