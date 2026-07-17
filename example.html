@@ -49,6 +49,68 @@
       max-width: 400px;
     }
 
+    /* External control buttons */
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .controls button {
+      padding: 8px 16px;
+      background: #4a9eff;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .controls button:hover {
+      background: #3a8eef;
+    }
+
+    .controls button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    /* Event log */
+    .event-log {
+      margin-top: 16px;
+      padding: 12px;
+      background: #0a0a14;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .event-log .event {
+      padding: 4px 0;
+      border-bottom: 1px solid #222;
+    }
+
+    .event-log .event:last-child {
+      border-bottom: none;
+    }
+
+    .event-log .event-time {
+      color: #666;
+      margin-right: 8px;
+    }
+
+    .event-log .event-name {
+      color: #4a9eff;
+    }
+
+    .event-log .event-detail {
+      color: #aaa;
+    }
+
     /* Host interference CSS - should not affect component internals */
     mini-tower-defense {
       display: block;
@@ -66,27 +128,103 @@
 <body>
   <h1>Mini Tower Defense - Component Examples</h1>
 
-  <h2>Example A: Default Chinese</h2>
+  <h2>Example A: Default Chinese (no auto-start)</h2>
   <div class="example">
     <div class="example-box">
-      <mini-tower-defense></mini-tower-defense>
+      <mini-tower-defense id="example-a"></mini-tower-defense>
+      <div class="controls">
+        <button onclick="document.getElementById('example-a').start()">Start</button>
+        <button onclick="document.getElementById('example-a').pause()">Pause</button>
+        <button onclick="document.getElementById('example-a').resume()">Resume</button>
+        <button onclick="document.getElementById('example-a').restart()">Restart</button>
+      </div>
+      <div class="event-log" id="log-a"></div>
     </div>
   </div>
 
   <h2>Example B: English + Muted + Auto-start</h2>
   <div class="example">
     <div class="example-box">
-      <mini-tower-defense locale="en" muted auto-start></mini-tower-defense>
+      <mini-tower-defense id="example-b" locale="en" muted auto-start></mini-tower-defense>
+      <div class="controls">
+        <button onclick="document.getElementById('example-b').start()">Start</button>
+        <button onclick="document.getElementById('example-b').pause()">Pause</button>
+        <button onclick="document.getElementById('example-b').resume()">Resume</button>
+        <button onclick="document.getElementById('example-b').restart()">Restart</button>
+      </div>
+      <div class="event-log" id="log-b"></div>
     </div>
   </div>
 
-  <h2>Example C: Narrow Container</h2>
+  <h2>Example C: Narrow Container (320x180)</h2>
   <div class="example narrow">
     <div class="example-box">
-      <mini-tower-defense width="320" height="180"></mini-tower-defense>
+      <mini-tower-defense id="example-c" width="320" height="180"></mini-tower-defense>
+      <div class="controls">
+        <button onclick="document.getElementById('example-c').start()">Start</button>
+        <button onclick="document.getElementById('example-c').pause()">Pause</button>
+        <button onclick="document.getElementById('example-c').resume()">Resume</button>
+        <button onclick="document.getElementById('example-c').restart()">Restart</button>
+      </div>
+      <div class="event-log" id="log-c"></div>
     </div>
   </div>
 
-  <script type="module" src="/src/index.js"></script>
+  <h2>Example D: CSS Custom Properties</h2>
+  <div class="example">
+    <div class="example-box">
+      <style>
+        mini-tower-defense.themed {
+          --mtd-accent: #ff6b6b;
+          --mtd-panel-bg: rgba(40, 20, 30, 0.95);
+          --mtd-gold: #ffa500;
+          --mtd-health: #ff4444;
+        }
+      </style>
+      <mini-tower-defense id="example-d" class="themed"></mini-tower-defense>
+      <div class="controls">
+        <button onclick="document.getElementById('example-d').start()">Start</button>
+        <button onclick="document.getElementById('example-d').pause()">Pause</button>
+        <button onclick="document.getElementById('example-d').resume()">Resume</button>
+        <button onclick="document.getElementById('example-d').restart()">Restart</button>
+      </div>
+      <div class="event-log" id="log-d"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import '/src/index.js';
+
+    // Helper to log events
+    function setupLogging(id, elementId) {
+      const logEl = document.getElementById(id);
+      const element = document.getElementById(elementId);
+
+      function log(eventName, detail) {
+        const time = new Date().toLocaleTimeString();
+        const detailStr = detail ? ` - ${JSON.stringify(detail)}` : '';
+        const entry = document.createElement('div');
+        entry.className = 'event';
+        entry.innerHTML = `<span class="event-time">${time}</span><span class="event-name">${eventName}</span><span class="event-detail">${detailStr}</span>`;
+        logEl.appendChild(entry);
+        logEl.scrollTop = logEl.scrollHeight;
+
+        // Limit log entries
+        while (logEl.children.length > 50) {
+          logEl.removeChild(logEl.firstChild);
+        }
+      }
+
+      const events = ['game-start', 'game-pause', 'game-resume', 'game-restart', 'game-win', 'game-lose', 'tower-built', 'tower-sold', 'wave-start', 'wave-complete'];
+      events.forEach(eventName => {
+        element.addEventListener(eventName, (e) => log(eventName, e.detail));
+      });
+    }
+
+    setupLogging('log-a', 'example-a');
+    setupLogging('log-b', 'example-b');
+    setupLogging('log-c', 'example-c');
+    setupLogging('log-d', 'example-d');
+  </script>
 </body>
 </html>
