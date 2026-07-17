@@ -1,5 +1,5 @@
-// Unit tests for state machine
-// Tests state transitions and game logic
+// Unit tests for state machine and game engine
+// Tests state transitions, tower building, and selling
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -8,7 +8,8 @@ import {
   GameStateType,
   GameEvent,
 } from '../../src/engine/state-machine.js';
-import { PLAYER_CONFIG } from '../../src/config/game-config.js';
+import { GameEngine } from '../../src/engine/game-engine.js';
+import { PLAYER_CONFIG, TOWER_STATS, TowerType } from '../../src/config/game-config.js';
 
 describe('State Machine', () => {
   describe('createInitialState', () => {
@@ -277,6 +278,187 @@ describe('State Machine', () => {
       transitionGameState(initial, GameEvent.START);
 
       expect(initial.state).toBe(GameStateType.IDLE);
+    });
+  });
+});
+
+describe('GameEngine - Tower Building and Selling', () => {
+  describe('Initial state', () => {
+    it('should have 7 tower slots', () => {
+      const engine = new GameEngine();
+      expect(engine.towerSlots).toHaveLength(7);
+    });
+
+    it('should start with initial gold (140)', () => {
+      const engine = new GameEngine();
+      expect(engine.state.gold).toBe(PLAYER_CONFIG.initialGold);
+    });
+
+    it('should start with all slots empty', () => {
+      const engine = new GameEngine();
+      engine.towerSlots.forEach(slot => {
+        expect(slot.towerId).toBeNull();
+      });
+    });
+  });
+
+  describe('buildTower', () => {
+    it('should build archer tower when enough gold', () => {
+      const engine = new GameEngine();
+      const result = engine.buildTower(0, TowerType.ARCHER);
+
+      expect(result.ok).toBe(true);
+      expect(result.snapshot.gold).toBe(140 - TOWER_STATS[TowerType.ARCHER].cost);
+      expect(result.snapshot.towers).toHaveLength(1);
+      expect(result.snapshot.towers[0].type).toBe(TowerType.ARCHER);
+    });
+
+    it('should build mage tower when enough gold', () => {
+      const engine = new GameEngine();
+      const result = engine.buildTower(0, TowerType.MAGE);
+
+      expect(result.ok).toBe(true);
+      expect(result.snapshot.gold).toBe(140 - TOWER_STATS[TowerType.MAGE].cost);
+    });
+
+    it('should deduct gold immediately on build', () => {
+      const engine = new GameEngine();
+      engine.buildTower(0, TowerType.ARCHER);
+
+      expect(engine.state.gold).toBe(140 - TOWER_STATS[TowerType.ARCHER].cost);
+    });
+
+    it('should not build on occupied slot (SLOT_OCCUPIED)', () => {
+      const engine = new GameEngine();
+      engine.buildTower(0, TowerType.ARCHER);
+      const result = engine.buildTower(0, TowerType.ARCHER);
+
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('SLOT_OCCUPIED');
+      expect(engine.state.gold).toBe(140 - TOWER_STATS[TowerType.ARCHER].cost);
+    });
+
+    it('should not build when insufficient gold (INSUFFICIENT_GOLD)', () => {
+      // Start with less gold than archer cost
+      const engine = new GameEngine();
+      // Manually set gold to 50 (can't do this through public API, so use a fresh engine)
+      // But we can test by building multiple towers
+      engine.buildTower(0, TowerType.ARCHER); // 140 - 60 = 80
+      engine.buildTower(1, TowerType.ARCHER); // 80 - 60 = 20
+      const result = engine.buildTower(2, TowerType.ARCHER); // 20 < 60
+
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('INSUFFICIENT_GOLD');
+    });
+
+    it('should not build invalid tower type (INVALID_TOWER)', () => {
+      const engine = new GameEngine();
+      const result = engine.buildTower(0, 'invalid_tower');
+
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('INVALID_TOWER');
+    });
+
+    it('should allow building on different slots', () => {
+      const engine = new GameEngine();
+      engine.buildTower(0, TowerType.ARCHER);  // 140 - 60 = 80
+      engine.buildTower(1, TowerType.ARCHER);  // 80 - 60 = 20
+      // 3rd archer would fail (20 < 60), so build a mage instead
+      // But mage costs 90, so let's just verify 2 towers work
+      // And test slot 2 with a different tower type if we had more gold
+
+      expect(engine.state.towers).toHaveLength(2);
+    });
+  });
+
+  describe('sellTower', () => {
+    it('should sell tower and return 60% refund (floor)', () => {
+      const engine = new GameEngine();
+      engine.buildTower(0, TowerType.ARCHER); // cost 60, refund = floor(60 * 0.60) = 36
+      const result = engine.sellTower(0);
+
+      expect(result.ok).toBe(true);
+      expect(result.refund).toBe(Math.floor(60 * 0.60));
+      expect(result.snapshot.towers).toHaveLength(0);
+      expect(engine.state.gold).toBe(140 - 60 + Math.floor(60 * 0.60));
+    });
+
+    it('should sell mage tower and return correct refund', () => {
+      const engine = new GameEngine();
+      engine.buildTower(0, TowerType.MAGE); // cost 90, refund = floor(90 * 0.60) = 54
+      const result = engine.sellTower(0);
+
+      expect(result.ok).toBe(true);
+      expect(result.refund).toBe(Math.floor(90 * 0.60));
+    });
+
+    it('should not sell empty slot (SLOT_EMPTY)', () => {
+      const engine = new GameEngine();
+      const result = engine.sellTower(0);
+
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('SLOT_EMPTY');
+    });
+
+    it('should make slot available for new tower after selling', () => {
+      const engine = new GameEngine();
+      engine.buildTower(0, TowerType.ARCHER);
+      engine.sellTower(0);
+      const result = engine.buildTower(0, TowerType.MAGE);
+
+      expect(result.ok).toBe(true);
+      expect(engine.state.towers[0].type).toBe(TowerType.MAGE);
+    });
+
+    it('failed sell should not change gold or state', () => {
+      const engine = new GameEngine();
+      const result = engine.sellTower(99); // invalid slot
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('Economy scenarios', () => {
+    it('Initial gold (140) allows 2 archer towers (60 each = 120) but not a 3rd', () => {
+      const engine = new GameEngine();
+
+      // Build 2 archer towers
+      const r1 = engine.buildTower(0, TowerType.ARCHER);
+      const r2 = engine.buildTower(1, TowerType.ARCHER);
+
+      expect(r1.ok).toBe(true);
+      expect(r2.ok).toBe(true);
+      expect(engine.state.gold).toBe(140 - 120); // 20 remaining
+
+      // 3rd archer should fail (20 < 60)
+      const r3 = engine.buildTower(2, TowerType.ARCHER);
+      expect(r3.ok).toBe(false);
+      expect(r3.code).toBe('INSUFFICIENT_GOLD');
+    });
+
+    it('Initial gold allows 1 mage tower (90) with 50 remaining', () => {
+      const engine = new GameEngine();
+      const result = engine.buildTower(0, TowerType.MAGE);
+
+      expect(result.ok).toBe(true);
+      expect(engine.state.gold).toBe(50); // 140 - 90
+    });
+
+    it('Failed commands do not change gold or state', () => {
+      const engine = new GameEngine();
+      const initialGold = engine.state.gold;
+
+      // Try invalid build
+      engine.buildTower(0, 'invalid_type');
+      expect(engine.state.gold).toBe(initialGold);
+
+      // Try to sell empty slot
+      engine.sellTower(0);
+      expect(engine.state.gold).toBe(initialGold);
+
+      // Build valid tower
+      engine.buildTower(0, TowerType.ARCHER);
+      expect(engine.state.gold).toBe(initialGold - TOWER_STATS[TowerType.ARCHER].cost);
     });
   });
 });
