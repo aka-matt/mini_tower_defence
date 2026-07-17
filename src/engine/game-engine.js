@@ -9,7 +9,8 @@ import { createWaveController, updateWaveController, stopWaveController } from '
 import { selectTarget } from './targeting.js';
 import { calculateDamage } from './collision.js';
 import { createProjectile, advanceProjectile, resetProjectileIdCounter } from '../entities/projectile.js';
-import { createEnemy, damageEnemy } from '../entities/enemy.js';
+import { createEnemy, damageEnemy, advanceEnemy } from '../entities/enemy.js';
+import { createEffect, advanceEffect, EffectType } from '../entities/effect.js';
 import { samplePath } from './path.js';
 
 /**
@@ -210,6 +211,7 @@ export class GameEngine {
     const events = [];
     let updatedEnemies = [...enemies];
     let newProjectiles = [...this._state.projectiles];
+    let newEffects = [...this._state.effects];
 
     // Helper to find enemy by ID
     const findEnemyById = (id) => {
@@ -346,6 +348,11 @@ export class GameEngine {
               enemyId: hitTarget.id,
               reward: hitTarget.reward,
             });
+
+            // Create death-puff effect
+            const enemyPos = samplePath(path, hitTarget.distance);
+            const deathEffect = createEffect(EffectType.DEATH_PUFF, enemyPos.x, enemyPos.y);
+            newEffects.push(deathEffect);
           }
         }
       } else {
@@ -353,10 +360,37 @@ export class GameEngine {
       }
     }
 
-    // Update state with new projectiles
+    // 3. Advance enemies along the path
+    for (const enemy of updatedEnemies) {
+      if (!enemy.alive) {
+        continue;
+      }
+
+      const result = advanceEnemy(enemy, deltaSeconds, path);
+      updateEnemy(result.enemy);
+
+      // Check if enemy leaked
+      if (result.leaked) {
+        const leakResult = this.processEnemyLeak(enemy.id, enemy.leakDamage);
+        events.push(...leakResult.events);
+      }
+    }
+
+    // 4. Advance effects
+    const advancedEffects = [];
+    for (const effect of newEffects) {
+      const result = advanceEffect(effect, deltaSeconds);
+      if (result.alive) {
+        advancedEffects.push(result.effect);
+      }
+    }
+    newEffects = advancedEffects;
+
+    // Update state with new projectiles and effects
     this._state = Object.freeze({
       ...this._state,
       projectiles: Object.freeze(advancedProjectiles),
+      effects: Object.freeze(newEffects),
     });
 
     return { enemies: updatedEnemies, events };
