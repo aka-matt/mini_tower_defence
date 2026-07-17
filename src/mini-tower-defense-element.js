@@ -3,6 +3,12 @@
  * A single-level tower defense game as a native Web Component with Shadow DOM.
  */
 
+import { getTemplate } from './template.js';
+import { getStyles } from './styles.js';
+import { HUDController } from './ui/hud-controller.js';
+import { getI18n } from './config/i18n.js';
+import { PLAYER_CONFIG } from './config/game-config.js';
+
 const ATTRIBUTES = {
   WIDTH: 'width',
   HEIGHT: 'height',
@@ -16,7 +22,7 @@ const DEFAULT_HEIGHT = 540;
 const DEFAULT_LOCALE = 'zh-CN';
 
 /**
- * Minimal tower defense custom element
+ * Mini Tower Defense custom element with Shadow DOM
  */
 class MiniTowerDefense extends HTMLElement {
   static get observedAttributes() {
@@ -33,6 +39,41 @@ class MiniTowerDefense extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._state = 'idle';
+    this._hud = null;
+    this._muted = false;
+    this._locale = DEFAULT_LOCALE;
+
+    // Initialize Shadow DOM content
+    this._initShadowDOM();
+  }
+
+  _initShadowDOM() {
+    // Add styles
+    const styleEl = document.createElement('style');
+    styleEl.textContent = getStyles();
+    this.shadowRoot.appendChild(styleEl);
+
+    // Add template
+    const templateDiv = document.createElement('div');
+    templateDiv.innerHTML = getTemplate();
+    this.shadowRoot.appendChild(templateDiv);
+
+    // Initialize HUD controller
+    const i18n = getI18n(this._locale);
+    this._hud = new HUDController(this.shadowRoot, i18n);
+
+    // Connect HUD buttons to component methods
+    this._hud.onSoundClick(() => {
+      this.muted = !this.muted;
+    });
+
+    this._hud.onPauseClick(() => {
+      if (this._state === 'running') {
+        this.pause();
+      } else if (this._state === 'paused') {
+        this.resume();
+      }
+    });
   }
 
   // Attributes
@@ -73,10 +114,14 @@ class MiniTowerDefense extends HTMLElement {
   }
 
   get muted() {
-    return this.hasAttribute(ATTRIBUTES.MUTED);
+    return this._muted;
   }
 
   set muted(value) {
+    this._muted = Boolean(value);
+    if (this._hud) {
+      this._hud.setMuted(this._muted);
+    }
     if (value) {
       this.setAttribute(ATTRIBUTES.MUTED, '');
     } else {
@@ -89,6 +134,19 @@ class MiniTowerDefense extends HTMLElement {
     return this._state;
   }
 
+  // Pause state helper
+  get paused() {
+    return this._state === 'paused';
+  }
+
+  set paused(value) {
+    if (value) {
+      this.pause();
+    } else {
+      this.resume();
+    }
+  }
+
   // Methods
   start() {
     this._state = 'running';
@@ -96,10 +154,16 @@ class MiniTowerDefense extends HTMLElement {
 
   pause() {
     this._state = 'paused';
+    if (this._hud) {
+      this._hud.setPaused(true);
+    }
   }
 
   resume() {
     this._state = 'running';
+    if (this._hud) {
+      this._hud.setPaused(false);
+    }
   }
 
   restart() {
@@ -108,23 +172,67 @@ class MiniTowerDefense extends HTMLElement {
 
   destroy() {
     this._state = 'destroyed';
+    if (this._hud) {
+      this._hud.destroy();
+      this._hud = null;
+    }
   }
 
+  /**
+   * Returns a frozen snapshot of current game state
+   * @returns {Object} GameSnapshot
+   */
   getSnapshot() {
-    return Object.freeze({ state: this._state });
+    return Object.freeze({
+      state: this._state,
+      lives: PLAYER_CONFIG.initialLives,
+      gold: PLAYER_CONFIG.initialGold,
+      wave: 0,
+      totalWaves: 5
+    });
+  }
+
+  /**
+   * Updates the HUD with the given snapshot
+   * @param {Object} snapshot
+   */
+  _updateHUD(snapshot) {
+    if (this._hud) {
+      this._hud.update(snapshot);
+    }
   }
 
   // Lifecycle
   connectedCallback() {
     // Initialize component when added to DOM
+    if (this.autoStart) {
+      this.start();
+    }
   }
 
   disconnectedCallback() {
     // Cleanup when removed from DOM
+    this.destroy();
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
-    // Handle attribute changes
+    if (oldValue === newValue) return;
+
+    switch (name) {
+      case ATTRIBUTES.LOCALE:
+        this._locale = newValue || DEFAULT_LOCALE;
+        if (this._hud) {
+          this._hud.setLocale(this._locale);
+        }
+        break;
+
+      case ATTRIBUTES.MUTED:
+        this._muted = this.hasAttribute(ATTRIBUTES.MUTED);
+        if (this._hud) {
+          this._hud.setMuted(this._muted);
+        }
+        break;
+    }
   }
 }
 
