@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini Tower Defense - Examples</title>
+  <style>
+    /* Host CSS that resets elements and sets canvas width to test isolation */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      color: #fff;
+    }
+
+    h2 {
+      margin: 20px 0 10px;
+      color: #aaa;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .example {
+      margin-bottom: 30px;
+    }
+
+    .example-box {
+      border: 2px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      background: #16213e;
+    }
+
+    /* Narrow container to test responsive behavior */
+    .narrow {
+      max-width: 400px;
+    }
+
+    /* Host interference CSS - should not affect component internals */
+    mini-tower-defense {
+      display: block;
+      border: 3px solid red;
+      background: yellow;
+    }
+
+    mini-tower-defense::before {
+      content: 'HOST CSS INTERFERENCE';
+      color: red;
+      font-size: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Mini Tower Defense - Component Examples</h1>
+
+  <h2>Example A: Default Chinese</h2>
+  <div class="example">
+    <div class="example-box">
+      <mini-tower-defense></mini-tower-defense>
+    </div>
+  </div>
+
+  <h2>Example B: English + Muted + Auto-start</h2>
+  <div class="example">
+    <div class="example-box">
+      <mini-tower-defense locale="en" muted auto-start></mini-tower-defense>
+    </div>
+  </div>
+
+  <h2>Example C: Narrow Container</h2>
+  <div class="example narrow">
+    <div class="example-box">
+      <mini-tower-defense width="320" height="180"></mini-tower-defense>
+    </div>
+  </div>
+
+  <script type="module" src="/src/index.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "name": "mini-tower-defense",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Mini Tower Defense - a single-level tower defense game as a Web Component",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "vite",
+    "test": "vitest",
+    "test:e2e": "playwright test",
+    "build": "vite build",
+    "lint": "echo 'No linter configured'"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "@vitest/ui": "^2.0.0",
+    "happy-dom": "^14.0.0",
+    "playwright": "^1.40.0",
+    "vite": "^5.0.0"
+  },
+  "peerDependencies": {
+    "vite": "^5.0.0",
+    "playwright": "^1.40.0"
+  },
+  "keywords": [
+    "tower-defense",
+    "web-component",
+    "game"
+  ],
+  "author": "",
+  "license": "MIT"
+}
