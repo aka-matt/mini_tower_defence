@@ -75,12 +75,13 @@ export class CanvasRenderer {
    * @param {number} dpr - Device pixel ratio
    */
   resize(cssWidth, cssHeight, dpr) {
-    this._dpr = Math.min(dpr, 2);  // Cap at 2 per spec
+    const cappedDpr = Math.min(dpr, 2);  // Cap at 2 per spec
+    this._dpr = cappedDpr;
     this._cssWidth = cssWidth;
     this._cssHeight = cssHeight;
 
-    const pixelWidth = Math.floor(cssWidth * dpr);
-    const pixelHeight = Math.floor(cssHeight * dpr);
+    const pixelWidth = Math.floor(cssWidth * cappedDpr);
+    const pixelHeight = Math.floor(cssHeight * cappedDpr);
 
     // Only resize if actually changed to avoid clearing
     if (this._canvas.width !== pixelWidth || this._canvas.height !== pixelHeight) {
@@ -89,7 +90,7 @@ export class CanvasRenderer {
     }
 
     // Set up scaling
-    this._ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this._ctx.setTransform(cappedDpr, 0, 0, cappedDpr, 0, 0);
   }
 
   /**
