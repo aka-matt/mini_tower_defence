@@ -116,7 +116,7 @@ export function transitionGameState(state, event, payload = {}) {
       if (currentState === GameStateType.IDLE || currentState === GameStateType.RUNNING) {
         const { towerCost, towerData } = payload;
         if (gold >= towerCost) {
-          const newTowers = [...towers, { ...towerData, id: `tower-slot-${towers.length + 1}` }];
+          const newTowers = [...towers, { ...towerData, id: `tower-slot-${towerData.slotId}` }];
           return deepFreeze({ ...state, gold: gold - towerCost, towers: newTowers });
         }
       }
