@@ -21,6 +21,7 @@ export const GameEvent = Object.freeze({
   RESUME: 'resume',
   WAVE_COMPLETE: 'wave_complete',
   ENEMY_LEAK: 'enemy_leak',
+  ENEMY_KILL: 'enemy_kill',
   BUILD: 'build',
   SELL: 'sell',
   WIN: 'win',
@@ -109,6 +110,13 @@ export function transitionGameState(state, event, payload = {}) {
           return deepFreeze({ ...state, lives: 0, state: GameStateType.LOST });
         }
         return deepFreeze({ ...state, lives: newLives });
+      }
+      break;
+
+    case GameEvent.ENEMY_KILL:
+      if (currentState === GameStateType.RUNNING) {
+        const { reward } = payload;
+        return deepFreeze({ ...state, gold: gold + reward });
       }
       break;
 
