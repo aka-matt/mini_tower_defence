@@ -1,13 +1,15 @@
 // Game engine - orchestrates game state, tower management, and commands
 // Wraps state machine with tower slot management
 
-import { TOWER_STATS, TowerType, PLAYER_CONFIG } from '../config/game-config.js';
+import { TOWER_STATS, TowerType, PLAYER_CONFIG, ENEMY_STATS } from '../config/game-config.js';
 import { TOWER_SLOTS } from '../config/map-config.js';
+import { WAVES } from '../config/waves.js';
 import { createInitialState, transitionGameState, GameEvent, GameStateType } from './state-machine.js';
+import { createWaveController, updateWaveController, stopWaveController } from './wave-controller.js';
 import { selectTarget } from './targeting.js';
 import { calculateDamage } from './collision.js';
 import { createProjectile, advanceProjectile, resetProjectileIdCounter } from '../entities/projectile.js';
-import { damageEnemy } from '../entities/enemy.js';
+import { createEnemy, damageEnemy } from '../entities/enemy.js';
 import { samplePath } from './path.js';
 
 /**
@@ -31,6 +33,8 @@ export class GameEngine {
     })));
     // Tower cooldown tracking: Map<towerId, cooldownRemaining>
     this._towerCooldowns = new Map();
+    // Wave controller
+    this._waveController = createWaveController(WAVES);
     // Reset projectile ID counter for deterministic behavior
     resetProjectileIdCounter(0);
   }
@@ -171,7 +175,28 @@ export class GameEngine {
   }
 
   /**
-   * Tick the game engine - process tower attacks and projectile movement.
+   * Start the game - transitions from idle to running
+   * @returns {{events: Array}} Events that occurred
+   */
+  start() {
+    if (this._state.state !== GameStateType.IDLE) {
+      return { events: [] };
+    }
+
+    this._state = transitionGameState(this._state, GameEvent.START);
+    return { events: [{ type: 'game-start' }] };
+  }
+
+  /**
+   * Get the wave controller for external access (e.g., HUD)
+   * @returns {Readonly<WaveController>}
+   */
+  getWaveController() {
+    return this._waveController;
+  }
+
+  /**
+   * Tick the game engine - process wave spawning, tower attacks, and projectile movement.
    * @param {number} deltaSeconds - Time elapsed in seconds
    * @param {Enemy[]} enemies - Current enemies in the game
    * @param {PathModel} path - The path enemies follow
@@ -197,6 +222,35 @@ export class GameEngine {
         e.id === updatedEnemy.id ? updatedEnemy : e
       );
     };
+
+    // 0. Update wave controller and process spawns
+    const aliveEnemyCount = updatedEnemies.filter(e => e.alive).length;
+    const waveResult = updateWaveController(this._waveController, deltaSeconds, aliveEnemyCount);
+    this._waveController = waveResult.controller;
+
+    // Process new spawns - create enemy objects
+    for (const spawn of waveResult.spawns) {
+      const enemy = createEnemy(spawn.spec, spawn.id);
+      updatedEnemies.push(enemy);
+    }
+
+    // Process wave events
+    for (const waveEvent of waveResult.events) {
+      switch (waveEvent.type) {
+        case 'wave_start':
+          events.push({ type: 'wave-start', wave: waveEvent.wave });
+          break;
+        case 'wave_complete':
+          events.push({ type: 'wave-complete', wave: waveEvent.wave });
+          // Advance to next wave
+          this._state = transitionGameState(this._state, GameEvent.WAVE_COMPLETE);
+          break;
+        case 'all_waves_complete':
+          events.push({ type: 'game-win' });
+          this._state = transitionGameState(this._state, GameEvent.WIN);
+          break;
+      }
+    }
 
     // 1. Update tower cooldowns and process attacks
     for (const tower of this._state.towers) {
@@ -309,11 +363,37 @@ export class GameEngine {
   }
 
   /**
+   * Process an enemy leak event - called when an enemy reaches the end of the path
+   * @param {string} enemyId - The ID of the enemy that leaked
+   * @param {number} leakDamage - The damage the enemy deals (from enemy.leakDamage)
+   * @returns {{enemies: Enemy[], events: Array}} Updated enemies and events
+   */
+  processEnemyLeak(enemyId, leakDamage) {
+    const events = [];
+
+    // Transition state with enemy leak
+    const newState = transitionGameState(this._state, GameEvent.ENEMY_LEAK, { leakDamage });
+    this._state = Object.freeze(newState);
+
+    events.push({ type: 'enemy-leak', enemyId, livesRemaining: this._state.lives });
+
+    // Check if game over
+    if (this._state.state === GameStateType.LOST) {
+      events.push({ type: 'game-lose' });
+      // Stop wave spawning
+      this._waveController = stopWaveController(this._waveController);
+    }
+
+    return { events };
+  }
+
+  /**
    * Reset the engine to initial state
    */
   reset() {
     this._state = createInitialState();
     this._towerCooldowns.clear();
+    this._waveController = createWaveController(WAVES);
     resetProjectileIdCounter(0);
   }
 }
