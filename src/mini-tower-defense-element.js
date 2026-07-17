@@ -8,6 +8,7 @@ import { getStyles } from './styles.js';
 import { HUDController } from './ui/hud-controller.js';
 import { BuildMenuController } from './ui/build-menu-controller.js';
 import { ModalController } from './ui/modal-controller.js';
+import { AudioManager } from './audio/audio-manager.js';
 import { getI18n } from './config/i18n.js';
 import { PLAYER_CONFIG, TOWER_STATS, TowerType } from './config/game-config.js';
 import { hitTestTowerSlot } from './render/coordinates.js';
@@ -48,6 +49,7 @@ class MiniTowerDefense extends HTMLElement {
     this._modal = null;
     this._muted = false;
     this._locale = DEFAULT_LOCALE;
+    this._audio = new AudioManager();
 
     // Pointer controller reference
     this._pointerController = null;
@@ -89,6 +91,7 @@ class MiniTowerDefense extends HTMLElement {
 
     // Connect HUD buttons to component methods
     this._hud.onSoundClick(() => {
+      this._audio.unlock();
       this.muted = !this.muted;
     });
 
@@ -172,6 +175,7 @@ class MiniTowerDefense extends HTMLElement {
       this._gameSnapshot.towers = [...this._gameSnapshot.towers, newTower];
       this._buildMenu.hide();
       this._updateHUD(this._gameSnapshot);
+      this._audio.play('build');
       this._dispatchEvent('tower-built', { towerId: newTower.id, towerType });
     }
   }
@@ -189,6 +193,7 @@ class MiniTowerDefense extends HTMLElement {
       this._gameSnapshot.towers = this._gameSnapshot.towers.filter(t => t.id !== towerId);
       this._buildMenu.hide();
       this._updateHUD(this._gameSnapshot);
+      this._audio.play('sell');
       this._dispatchEvent('tower-sold', { towerId, refund });
     }
   }
@@ -249,6 +254,9 @@ class MiniTowerDefense extends HTMLElement {
 
   set muted(value) {
     this._muted = Boolean(value);
+    if (this._audio) {
+      this._audio.setMuted(this._muted);
+    }
     if (this._hud) {
       this._hud.setMuted(this._muted);
     }
@@ -281,6 +289,7 @@ class MiniTowerDefense extends HTMLElement {
   start() {
     this._state = 'running';
     this._gameSnapshot.state = 'running';
+    this._audio.play('wave-start');
     this._dispatchEvent('game-start', {});
   }
 
@@ -324,6 +333,10 @@ class MiniTowerDefense extends HTMLElement {
   destroy() {
     this._state = 'destroyed';
     this._gameSnapshot.state = 'destroyed';
+    if (this._audio) {
+      this._audio.destroy();
+      this._audio = null;
+    }
     if (this._hud) {
       this._hud.destroy();
       this._hud = null;
@@ -365,17 +378,20 @@ class MiniTowerDefense extends HTMLElement {
       if (this._modal) {
         this._modal.showVictory(this._gameSnapshot);
       }
+      this._audio.play('victory');
       this._dispatchEvent('game-win', {});
     } else if (this._gameSnapshot.state === 'lost' && prevState !== 'lost') {
       if (this._modal) {
         this._modal.showDefeat(this._gameSnapshot);
       }
+      this._audio.play('defeat');
       this._dispatchEvent('game-lose', {});
     }
 
     // Handle wave transitions - show announcements
     if (snapshot.wave && snapshot.wave !== prevWave) {
       if (snapshot.wave > prevWave) {
+        this._audio.play('wave-start');
         this._dispatchEvent('wave-start', { wave: snapshot.wave });
       }
     }
