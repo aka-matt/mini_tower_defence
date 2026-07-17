@@ -59,7 +59,7 @@ export class GameEngine {
   buildTower(slotIndex, towerType) {
     // Validate slot index
     if (slotIndex < 0 || slotIndex >= this._towerSlots.length) {
-      return { ok: false, code: 'INVALID_SLOT' };
+      return { ok: false, code: 'INVALID_TOWER' };
     }
 
     // Validate tower type
@@ -122,7 +122,7 @@ export class GameEngine {
   sellTower(slotIndex) {
     // Validate slot index
     if (slotIndex < 0 || slotIndex >= this._towerSlots.length) {
-      return { ok: false, code: 'INVALID_SLOT' };
+      return { ok: false, code: 'INVALID_TOWER' };
     }
 
     const slot = this._towerSlots[slotIndex];
@@ -135,7 +135,7 @@ export class GameEngine {
     // Find the tower in state
     const tower = this._state.towers.find(t => t.id === slot.towerId);
     if (!tower) {
-      return { ok: false, code: 'NO_TOWER' };
+      return { ok: false, code: 'SLOT_EMPTY' };
     }
 
     // Calculate refund (60% of cost, floored)
