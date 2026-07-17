@@ -84,9 +84,9 @@ export function damageEnemy(enemy, damage, isPhysical) {
     return enemy;
   }
 
-  const effectiveDamage = isPhysical
-    ? Math.max(1, damage - enemy.armor)
-    : Math.max(1, damage - enemy.magicRes);
+  // Note: resistance reduction is already applied by calculateDamage in the game engine
+  // so we use damage directly here
+  const effectiveDamage = damage;
 
   const newHp = enemy.hp - effectiveDamage;
 
