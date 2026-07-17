@@ -43,6 +43,15 @@ class MiniTowerDefense extends HTMLElement {
     this._muted = false;
     this._locale = DEFAULT_LOCALE;
 
+    // Initialize game snapshot with idle state values
+    this._gameSnapshot = {
+      state: 'idle',
+      lives: PLAYER_CONFIG.initialLives,
+      gold: PLAYER_CONFIG.initialGold,
+      wave: 0,
+      totalWaves: 5
+    };
+
     // Initialize Shadow DOM content
     this._initShadowDOM();
   }
@@ -150,10 +159,12 @@ class MiniTowerDefense extends HTMLElement {
   // Methods
   start() {
     this._state = 'running';
+    this._gameSnapshot.state = 'running';
   }
 
   pause() {
     this._state = 'paused';
+    this._gameSnapshot.state = 'paused';
     if (this._hud) {
       this._hud.setPaused(true);
     }
@@ -161,6 +172,7 @@ class MiniTowerDefense extends HTMLElement {
 
   resume() {
     this._state = 'running';
+    this._gameSnapshot.state = 'running';
     if (this._hud) {
       this._hud.setPaused(false);
     }
@@ -168,10 +180,15 @@ class MiniTowerDefense extends HTMLElement {
 
   restart() {
     this._state = 'idle';
+    this._gameSnapshot.state = 'idle';
+    this._gameSnapshot.lives = PLAYER_CONFIG.initialLives;
+    this._gameSnapshot.gold = PLAYER_CONFIG.initialGold;
+    this._gameSnapshot.wave = 0;
   }
 
   destroy() {
     this._state = 'destroyed';
+    this._gameSnapshot.state = 'destroyed';
     if (this._hud) {
       this._hud.destroy();
       this._hud = null;
@@ -179,17 +196,25 @@ class MiniTowerDefense extends HTMLElement {
   }
 
   /**
+   * Updates the internal game snapshot. Called by the game loop.
+   * @param {Object} snapshot
+   */
+  updateSnapshot(snapshot) {
+    this._gameSnapshot = {
+      state: snapshot.state || this._state,
+      lives: snapshot.lives,
+      gold: snapshot.gold,
+      wave: snapshot.wave,
+      totalWaves: snapshot.totalWaves
+    };
+  }
+
+  /**
    * Returns a frozen snapshot of current game state
    * @returns {Object} GameSnapshot
    */
   getSnapshot() {
-    return Object.freeze({
-      state: this._state,
-      lives: PLAYER_CONFIG.initialLives,
-      gold: PLAYER_CONFIG.initialGold,
-      wave: 0,
-      totalWaves: 5
-    });
+    return Object.freeze({ ...this._gameSnapshot });
   }
 
   /**
