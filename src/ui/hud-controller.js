@@ -23,10 +23,12 @@ export class HUDController {
   /**
    * @param {ShadowRoot} shadowRoot
    * @param {I18nMap} i18n
+   * @param {Function} getI18nFn - Function to get i18n map for a locale
    */
-  constructor(shadowRoot, i18n) {
+  constructor(shadowRoot, i18n, getI18nFn) {
     this._shadowRoot = shadowRoot;
     this._i18n = i18n;
+    this._getI18n = getI18nFn;
     this._soundClickHandler = null;
     this._pauseClickHandler = null;
 
@@ -83,8 +85,16 @@ export class HUDController {
    * @param {'zh-CN' | 'en'} locale
    */
   setLocale(locale) {
-    // Labels are data-i18n keys - update if needed for dynamic label changes
-    // For now labels are static in template
+    this._i18n = this._getI18n(locale);
+
+    // Update all elements with data-i18n attributes
+    const labeledElements = this._shadowRoot.querySelectorAll('[data-i18n]');
+    for (const el of labeledElements) {
+      const key = el.getAttribute('data-i18n');
+      if (this._i18n[key]) {
+        el.textContent = this._i18n[key];
+      }
+    }
   }
 
   /**

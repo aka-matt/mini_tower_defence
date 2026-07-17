@@ -60,7 +60,7 @@ class MiniTowerDefense extends HTMLElement {
 
     // Initialize HUD controller
     const i18n = getI18n(this._locale);
-    this._hud = new HUDController(this.shadowRoot, i18n);
+    this._hud = new HUDController(this.shadowRoot, i18n, getI18n);
 
     // Connect HUD buttons to component methods
     this._hud.onSoundClick(() => {
