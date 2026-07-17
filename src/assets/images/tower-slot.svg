@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 50 50">
+  <!-- Shadow -->
+  <ellipse fill="#5a4a3f" cx="25" cy="38" rx="22" ry="10"/>
+  <!-- Platform top -->
+  <ellipse fill="#7b6b5f" cx="25" cy="32" rx="20" ry="9"/>
+  <!-- Platform inner -->
+  <ellipse fill="#6b5b4f" cx="25" cy="30" rx="18" ry="8"/>
+  <!-- Center marker -->
+  <circle fill="#5a4a3f" cx="25" cy="30" r="3"/>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <!-- Sky -->
+  <rect fill="#87CEEB" width="960" height="300"/>
+  <!-- Grass -->
+  <rect fill="#4a7c4e" y="300" width="960" height="240"/>
+  <!-- Grass detail -->
+  <rect fill="#5a8c5e" y="400" width="960" height="140"/>
+  <!-- Path area hint -->
+  <rect fill="#8b7355" y="395" width="960" height="50" opacity="0.3"/>
+</svg>

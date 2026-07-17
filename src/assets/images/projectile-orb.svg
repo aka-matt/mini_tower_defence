@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <defs>
+    <radialGradient id="orbg" cx="30%" cy="30%">
+      <stop offset="0%" stop-color="#c8a0ff"/>
+      <stop offset="100%" stop-color="#6040a0"/>
+    </radialGradient>
+  </defs>
+  <!-- Main orb -->
+  <circle fill="url(#orbg)" cx="8" cy="8" r="7"/>
+  <!-- Highlight -->
+  <circle fill="#e0c0ff" cx="5" cy="5" r="2"/>
+  <!-- Inner glow -->
+  <circle fill="#9060c0" cx="8" cy="8" r="4"/>
+</svg>

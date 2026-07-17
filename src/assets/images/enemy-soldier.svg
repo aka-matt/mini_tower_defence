@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+  <!-- Body -->
+  <ellipse fill="#c44" cx="15" cy="20" rx="8" ry="10"/>
+  <!-- Head -->
+  <circle fill="#fa0" cx="15" cy="8" r="6"/>
+  <!-- Helmet -->
+  <rect fill="#333" x="10" y="4" width="10" height="4" rx="1"/>
+  <!-- Eyes -->
+  <circle fill="#fff" cx="12" cy="8" r="1.5"/>
+  <circle fill="#fff" cx="18" cy="8" r="1.5"/>
+</svg>
