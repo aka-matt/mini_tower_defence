@@ -75,7 +75,7 @@ export class CanvasRenderer {
    * @param {number} dpr - Device pixel ratio
    */
   resize(cssWidth, cssHeight, dpr) {
-    this._dpr = dpr;
+    this._dpr = Math.min(dpr, 2);  // Cap at 2 per spec
     this._cssWidth = cssWidth;
     this._cssHeight = cssHeight;
 

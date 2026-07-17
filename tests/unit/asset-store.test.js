@@ -73,6 +73,24 @@ describe('AssetStore', () => {
     });
   });
 
+  describe('graceful degradation', () => {
+    it('should resolve loadAll even if individual assets fail', async () => {
+      // AssetStore should handle individual asset failures gracefully
+      // by still resolving loadAll() and marking isLoaded as true
+      const store = new AssetStore();
+      await expect(store.loadAll()).resolves.toBeUndefined();
+      expect(store.isLoaded()).toBe(true);
+    });
+
+    it('should return null for failed assets without crashing', async () => {
+      const store = new AssetStore();
+      await store.loadAll();
+      // Unknown keys should return null, not throw
+      expect(() => store.get('non-existent-asset')).not.toThrow();
+      expect(store.get('non-existent-asset')).toBeNull();
+    });
+  });
+
   describe('getKeys()', () => {
     it('should return array of asset keys', () => {
       const keys = store.getKeys();
