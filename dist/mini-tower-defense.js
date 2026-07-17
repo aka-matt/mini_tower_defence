@@ -771,6 +771,29 @@ canvas {
     }
   };
 
+  // dist/temp-src/engine/score.js
+  function calculateWinScore(totalKillRewardGold, lives, elapsedMs) {
+    const baseKillScore = Math.max(0, totalKillRewardGold) * 10;
+    const livesBonus = Math.max(0, lives) * 100;
+    const safeElapsed = Math.max(0, elapsedMs);
+    const timeBonus = Math.max(0, 3e4 - Math.floor(safeElapsed / 10));
+    const winScore = baseKillScore + livesBonus + timeBonus;
+    return { baseKillScore, livesBonus, timeBonus, winScore };
+  }
+  function calculateLoseScore(totalKillRewardGold, completedWave) {
+    const baseKillScore = Math.max(0, totalKillRewardGold) * 10;
+    const safeCompleted = Math.max(0, completedWave);
+    const loseScore = baseKillScore + safeCompleted * 100;
+    return { baseKillScore, loseScore };
+  }
+  function calculateScore2(params) {
+    const { outcome, totalKillRewardGold = 0, lives = 0, elapsedMs = 0, completedWave = 0 } = params;
+    if (outcome === "win") {
+      return calculateWinScore(totalKillRewardGold, lives, elapsedMs);
+    }
+    return calculateLoseScore(totalKillRewardGold, completedWave);
+  }
+
   // dist/temp-src/ui/modal-controller.js
   var ModalController = class {
     /**
@@ -794,63 +817,69 @@ canvas {
     _bindEvents() {
       if (this._resumeButton) {
         const handler = () => {
-          if (this._onResume) {
-            this._onResume();
-          }
+          if (this._onResume) this._onResume();
         };
         this._resumeButton.addEventListener("click", handler);
         this._boundHandlers.push({ button: this._resumeButton, handler });
       }
       if (this._restartButton) {
         const handler = () => {
-          if (this._onRestart) {
-            this._onRestart();
-          }
+          if (this._onRestart) this._onRestart();
         };
         this._restartButton.addEventListener("click", handler);
         this._boundHandlers.push({ button: this._restartButton, handler });
       }
     }
     /**
-     * Show victory modal
+     * Append a labeled score row with safe textContent.
+     * @returns {HTMLDivElement}
+     */
+    _appendRow(parent, label, value, { emphasis } = {}) {
+      const row = document.createElement("div");
+      row.className = emphasis ? "score-row total" : "score-row";
+      const labelEl = document.createElement("span");
+      labelEl.textContent = label;
+      const valueEl = document.createElement("span");
+      valueEl.textContent = String(value);
+      row.appendChild(labelEl);
+      row.appendChild(valueEl);
+      parent.appendChild(row);
+      return row;
+    }
+    /**
+     * Clear all children of a node using removeChild (safe in any DOM).
+     * @param {Element} node
+     */
+    _clearNode(node) {
+      while (node.firstChild) node.removeChild(node.firstChild);
+    }
+    /**
+     * Show victory modal.
      * @param {GameSnapshot} snapshot
      */
     showVictory(snapshot) {
       if (!this._modal || !this._modalContent) return;
-      const score = calculateScore({
-        totalKillRewardGold: snapshot.gold || 0,
+      const score = calculateScore2({
+        outcome: "win",
+        totalKillRewardGold: snapshot.totalKillRewardGold || 0,
         lives: snapshot.lives || 0,
         elapsedMs: snapshot.elapsedMs || 0,
         completedWave: snapshot.wave || 0
       });
       this._modalTitle.textContent = this._i18n.victory || "Victory!";
       this._modalTitle.classList.remove("defeat");
-      this._modalBody.innerHTML = `
-      <div class="score-breakdown">
-        <div class="score-row">
-          <span>Kills:</span>
-          <span>${score.baseKillScore}</span>
-        </div>
-        <div class="score-row">
-          <span>Lives Bonus:</span>
-          <span>${score.livesBonus}</span>
-        </div>
-        <div class="score-row">
-          <span>Time Bonus:</span>
-          <span>${score.timeBonus}</span>
-        </div>
-        <div class="score-row total">
-          <span>Total:</span>
-          <span>${score.winScore}</span>
-        </div>
-      </div>
-    `;
-      if (this._resumeButton) {
-        this._resumeButton.hidden = true;
-      }
-      if (this._restartButton) {
-        this._restartButton.hidden = false;
-      }
+      this._clearNode(this._modalBody);
+      const breakdown = document.createElement("div");
+      breakdown.className = "score-breakdown";
+      this._appendRow(breakdown, this._i18n.killsLabel || "Kills:", score.baseKillScore);
+      this._appendRow(breakdown, this._i18n.livesBonusLabel || "Lives Bonus:", score.livesBonus);
+      this._appendRow(breakdown, this._i18n.timeBonusLabel || "Time Bonus:", score.timeBonus);
+      this._appendRow(breakdown, this._i18n.totalLabel || "Total:", score.winScore, {
+        emphasis: true
+      });
+      this._modalBody.appendChild(breakdown);
+      if (this._resumeButton) this._resumeButton.hidden = true;
+      if (this._restartButton) this._restartButton.hidden = false;
       this._modal.setAttribute("role", "dialog");
       this._modal.setAttribute("aria-modal", "true");
       this._modal.setAttribute("aria-labelledby", "modal-title");
@@ -858,41 +887,35 @@ canvas {
       this._restartButton?.focus();
     }
     /**
-     * Show defeat modal
+     * Show defeat modal.
      * @param {GameSnapshot} snapshot
      */
     showDefeat(snapshot) {
       if (!this._modal || !this._modalContent) return;
-      const score = calculateScore({
-        totalKillRewardGold: snapshot.gold || 0,
+      const score = calculateScore2({
+        outcome: "lose",
+        totalKillRewardGold: snapshot.totalKillRewardGold || 0,
         lives: snapshot.lives || 0,
         elapsedMs: snapshot.elapsedMs || 0,
         completedWave: snapshot.wave || 0
       });
       this._modalTitle.textContent = this._i18n.defeat || "Defeat";
       this._modalTitle.classList.add("defeat");
-      this._modalBody.innerHTML = `
-      <div class="score-breakdown">
-        <div class="score-row">
-          <span>Waves Completed:</span>
-          <span>${snapshot.wave || 0}</span>
-        </div>
-        <div class="score-row">
-          <span>Kills:</span>
-          <span>${score.baseKillScore}</span>
-        </div>
-        <div class="score-row total">
-          <span>Score:</span>
-          <span>${score.loseScore}</span>
-        </div>
-      </div>
-    `;
-      if (this._resumeButton) {
-        this._resumeButton.hidden = true;
-      }
-      if (this._restartButton) {
-        this._restartButton.hidden = false;
-      }
+      this._clearNode(this._modalBody);
+      const breakdown = document.createElement("div");
+      breakdown.className = "score-breakdown";
+      this._appendRow(
+        breakdown,
+        this._i18n.wavesCompletedLabel || "Waves Completed:",
+        snapshot.wave || 0
+      );
+      this._appendRow(breakdown, this._i18n.killsLabel || "Kills:", score.baseKillScore);
+      this._appendRow(breakdown, this._i18n.scoreLabel || "Score:", score.loseScore, {
+        emphasis: true
+      });
+      this._modalBody.appendChild(breakdown);
+      if (this._resumeButton) this._resumeButton.hidden = true;
+      if (this._restartButton) this._restartButton.hidden = false;
       this._modal.setAttribute("role", "dialog");
       this._modal.setAttribute("aria-modal", "true");
       this._modal.setAttribute("aria-labelledby", "modal-title");
@@ -900,19 +923,15 @@ canvas {
       this._restartButton?.focus();
     }
     /**
-     * Show paused modal
+     * Show paused modal.
      */
     showPaused() {
       if (!this._modal || !this._modalContent) return;
       this._modalTitle.textContent = this._i18n.pause || "Paused";
       this._modalTitle.classList.remove("defeat");
-      this._modalBody.innerHTML = "";
-      if (this._resumeButton) {
-        this._resumeButton.hidden = false;
-      }
-      if (this._restartButton) {
-        this._restartButton.hidden = false;
-      }
+      this._clearNode(this._modalBody);
+      if (this._resumeButton) this._resumeButton.hidden = false;
+      if (this._restartButton) this._restartButton.hidden = false;
       this._modal.setAttribute("role", "dialog");
       this._modal.setAttribute("aria-modal", "true");
       this._modal.setAttribute("aria-labelledby", "modal-title");
@@ -920,22 +939,20 @@ canvas {
       this._resumeButton?.focus();
     }
     /**
-     * Hide the modal
+     * Hide the modal.
      */
     hide() {
-      if (this._modal) {
-        this._modal.hidden = true;
-      }
+      if (this._modal) this._modal.hidden = true;
     }
     /**
-     * Set callback for resume action
+     * Set callback for resume action.
      * @param {function(): void} callback
      */
     onResume(callback) {
       this._onResume = callback;
     }
     /**
-     * Set callback for restart action
+     * Set callback for restart action.
      * @param {function(): void} callback
      */
     onRestart(callback) {
@@ -956,31 +973,56 @@ canvas {
 
   // dist/temp-src/audio/audio-manager.js
   var SOUND_CONFIGS = {
-    "build": { frequency: 440, duration: 0.15, type: "sine", gain: 0.3 },
-    "sell": { frequency: 330, duration: 0.12, type: "triangle", gain: 0.25 },
+    build: { frequency: 440, duration: 0.15, type: "sine", gain: 0.3 },
+    sell: { frequency: 330, duration: 0.12, type: "triangle", gain: 0.25 },
     "arrow-shot": { frequency: 880, duration: 0.08, type: "square", gain: 0.15 },
     "magic-shot": { frequency: 1200, duration: 0.1, type: "sine", gain: 0.2 },
-    "hit": { frequency: 220, duration: 0.1, type: "sawtooth", gain: 0.2 },
+    hit: { frequency: 220, duration: 0.1, type: "sawtooth", gain: 0.2 },
     "enemy-leak": { frequency: 150, duration: 0.3, type: "sawtooth", gain: 0.3 },
     "wave-start": { frequency: 660, duration: 0.2, type: "triangle", gain: 0.25 },
-    "victory": { frequency: 880, duration: 0.4, type: "sine", gain: 0.3 },
-    "defeat": { frequency: 200, duration: 0.5, type: "sawtooth", gain: 0.25 },
+    victory: { frequency: 880, duration: 0.4, type: "sine", gain: 0.3 },
+    defeat: { frequency: 200, duration: 0.5, type: "sawtooth", gain: 0.25 },
     "ui-click": { frequency: 560, duration: 0.05, type: "square", gain: 0.1 }
   };
+  function defaultOnError(detail) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("game-error", {
+          detail,
+          bubbles: true,
+          composed: true
+        })
+      );
+    }
+  }
   var AudioManager = class {
-    constructor() {
+    /**
+     * @param {ErrorReporter} [onError] - Callback used to surface failures.
+     *   Defaults to dispatching a `game-error` event on `window`.
+     */
+    constructor(onError) {
       this._audioContext = null;
       this._muted = false;
       this._unlocked = false;
+      this._onError = typeof onError === "function" ? onError : defaultOnError;
     }
     /**
-     * Initialize AudioContext on first user gesture
+     * Initialize AudioContext on first user gesture.
+     * Safe to call repeatedly. Idempotent once unlocked.
      * @returns {Promise<void>}
      */
     async unlock() {
       if (this._unlocked) return;
       try {
-        this._audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const Ctor = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+        if (!Ctor) {
+          this._onError({
+            code: "AUDIO_DECODE_FAILED",
+            message: "AudioContext is not supported in this environment"
+          });
+          return;
+        }
+        this._audioContext = new Ctor();
         const buffer = this._audioContext.createBuffer(1, 1, 22050);
         const source = this._audioContext.createBufferSource();
         source.buffer = buffer;
@@ -991,13 +1033,16 @@ canvas {
         }
         this._unlocked = true;
       } catch (e) {
-        console.warn("AudioManager: Failed to unlock AudioContext", e);
+        this._onError({
+          code: "AUDIO_DECODE_FAILED",
+          message: `Failed to unlock AudioContext: ${e && e.message ? e.message : String(e)}`
+        });
         this._audioContext = null;
       }
     }
     /**
-     * Play a sound by name
-     * @param {string} name - Sound name
+     * Play a sound by name. No-op when muted, not unlocked, or audio failed.
+     * @param {string} name
      */
     play(name) {
       if (this._muted || !this._unlocked || !this._audioContext) return;
@@ -1009,35 +1054,42 @@ canvas {
         oscillator.type = config.type;
         oscillator.frequency.setValueAtTime(config.frequency, this._audioContext.currentTime);
         gainNode.gain.setValueAtTime(config.gain, this._audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(1e-3, this._audioContext.currentTime + config.duration);
+        gainNode.gain.exponentialRampToValueAtTime(
+          1e-3,
+          this._audioContext.currentTime + config.duration
+        );
         oscillator.connect(gainNode);
         gainNode.connect(this._audioContext.destination);
         oscillator.start(this._audioContext.currentTime);
         oscillator.stop(this._audioContext.currentTime + config.duration);
       } catch (e) {
-        console.warn(`AudioManager: Failed to play sound "${name}"`, e);
+        this._onError({
+          code: "AUDIO_DECODE_FAILED",
+          message: `Failed to play sound "${name}": ${e && e.message ? e.message : String(e)}`
+        });
       }
     }
     /**
-     * Set muted state
+     * Set muted state.
      * @param {boolean} value
      */
     setMuted(value) {
       this._muted = Boolean(value);
     }
-    /**
-     * Check if audio is muted
-     * @returns {boolean}
-     */
+    /** @returns {boolean} */
     get muted() {
       return this._muted;
     }
     /**
-     * Release AudioContext
+     * Release AudioContext. After this, calls to play() are silent. Re-unlock by
+     * calling unlock() again.
      */
     destroy() {
       if (this._audioContext) {
-        this._audioContext.close();
+        try {
+          this._audioContext.close();
+        } catch (e) {
+        }
         this._audioContext = null;
         this._unlocked = false;
       }
@@ -1139,77 +1191,6 @@ canvas {
     TOWER_SLOTS,
     WORLD_SIZE
   });
-
-  // dist/temp-src/engine/path.js
-  function createPath(points) {
-    if (!points || points.length < 2) {
-      throw new Error("Path requires at least 2 points");
-    }
-    const segments = [];
-    for (let i = 0; i < points.length - 1; i++) {
-      const start = points[i];
-      const end = points[i + 1];
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const length = Math.sqrt(dx * dx + dy * dy);
-      const angle = Math.atan2(dy, dx);
-      segments.push(Object.freeze({
-        start: Object.freeze({ x: start.x, y: start.y }),
-        end: Object.freeze({ x: end.x, y: end.y }),
-        length,
-        angle
-      }));
-    }
-    const totalLength = segments.reduce((sum, seg) => sum + seg.length, 0);
-    return Object.freeze({
-      totalLength,
-      segments: Object.freeze(segments)
-    });
-  }
-  function samplePath(path, distance2) {
-    const { totalLength, segments } = path;
-    if (distance2 <= 0) {
-      return {
-        x: segments[0].start.x,
-        y: segments[0].start.y,
-        angle: segments[0].angle,
-        progress: 0
-      };
-    }
-    if (distance2 >= totalLength) {
-      const lastSeg2 = segments[segments.length - 1];
-      return {
-        x: lastSeg2.end.x,
-        y: lastSeg2.end.y,
-        angle: lastSeg2.angle,
-        progress: 1
-      };
-    }
-    let accumulatedLength = 0;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      if (distance2 < accumulatedLength + seg.length) {
-        const localDistance = distance2 - accumulatedLength;
-        const t = seg.length > 0 ? localDistance / seg.length : 0;
-        const x = seg.start.x + (seg.end.x - seg.start.x) * t;
-        const y = seg.start.y + (seg.end.y - seg.start.y) * t;
-        return {
-          x,
-          y,
-          angle: seg.angle,
-          progress: distance2 / totalLength
-        };
-      }
-      accumulatedLength += seg.length;
-    }
-    const lastSeg = segments[segments.length - 1];
-    return {
-      x: lastSeg.end.x,
-      y: lastSeg.end.y,
-      angle: lastSeg.angle,
-      progress: 1
-    };
-  }
 
   // dist/temp-src/config/waves.js
   var totalWaves = 5;
@@ -1324,6 +1305,110 @@ canvas {
     totalWaves
   });
 
+  // dist/temp-src/engine/path.js
+  function createPath(points) {
+    if (!points || points.length < 2) {
+      throw new Error("Path requires at least 2 points");
+    }
+    const segments = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const start = points[i];
+      const end = points[i + 1];
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+      segments.push(Object.freeze({
+        start: Object.freeze({ x: start.x, y: start.y }),
+        end: Object.freeze({ x: end.x, y: end.y }),
+        length,
+        angle
+      }));
+    }
+    const totalLength = segments.reduce((sum, seg) => sum + seg.length, 0);
+    return Object.freeze({
+      totalLength,
+      segments: Object.freeze(segments)
+    });
+  }
+  function samplePath(path, distance2) {
+    const { totalLength, segments } = path;
+    if (distance2 <= 0) {
+      return {
+        x: segments[0].start.x,
+        y: segments[0].start.y,
+        angle: segments[0].angle,
+        progress: 0
+      };
+    }
+    if (distance2 >= totalLength) {
+      const lastSeg2 = segments[segments.length - 1];
+      return {
+        x: lastSeg2.end.x,
+        y: lastSeg2.end.y,
+        angle: lastSeg2.angle,
+        progress: 1
+      };
+    }
+    let accumulatedLength = 0;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (distance2 < accumulatedLength + seg.length) {
+        const localDistance = distance2 - accumulatedLength;
+        const t = seg.length > 0 ? localDistance / seg.length : 0;
+        const x = seg.start.x + (seg.end.x - seg.start.x) * t;
+        const y = seg.start.y + (seg.end.y - seg.start.y) * t;
+        return {
+          x,
+          y,
+          angle: seg.angle,
+          progress: distance2 / totalLength
+        };
+      }
+      accumulatedLength += seg.length;
+    }
+    const lastSeg = segments[segments.length - 1];
+    return {
+      x: lastSeg.end.x,
+      y: lastSeg.end.y,
+      angle: lastSeg.angle,
+      progress: 1
+    };
+  }
+
+  // dist/temp-src/engine/ids.js
+  var _enemyCounter = 0;
+  var _towerCounter = 0;
+  var _projectileCounter = 0;
+  var _effectCounter = 0;
+  function nextEnemyId(existingId) {
+    if (existingId) return existingId;
+    _enemyCounter += 1;
+    return `enemy-${_enemyCounter}`;
+  }
+  function towerIdForSlot(slotIndex) {
+    if (slotIndex === void 0 || slotIndex === null || Number.isNaN(slotIndex)) {
+      throw new Error("towerIdForSlot requires a numeric slotIndex");
+    }
+    return `tower-slot-${slotIndex}`;
+  }
+  function nextProjectileId(existingId) {
+    if (existingId) return existingId;
+    _projectileCounter += 1;
+    return `projectile-${_projectileCounter}`;
+  }
+  function nextEffectId(existingId) {
+    if (existingId) return existingId;
+    _effectCounter += 1;
+    return `effect-${_effectCounter}`;
+  }
+  function resetIdCounters(counts = {}) {
+    _enemyCounter = counts.enemy || 0;
+    _towerCounter = counts.tower || 0;
+    _projectileCounter = counts.projectile || 0;
+    _effectCounter = counts.effect || 0;
+  }
+
   // dist/temp-src/engine/state-machine.js
   var GameStateType = Object.freeze({
     IDLE: "idle",
@@ -1344,7 +1429,9 @@ canvas {
     SELL: "sell",
     WIN: "win",
     LOSE: "lose",
-    RESTART: "restart"
+    RESTART: "restart",
+    TICK: "tick"
+    // advance elapsedMs by payload.deltaMs
   });
   function createInitialState() {
     return Object.freeze({
@@ -1354,6 +1441,9 @@ canvas {
       wave: 0,
       elapsedMs: 0,
       score: 0,
+      // Cumulative gold earned from kills (separate from current balance,
+      // which drops when towers are built). Used by the score formula.
+      totalKillRewardGold: 0,
       towers: [],
       enemies: [],
       projectiles: [],
@@ -1372,7 +1462,15 @@ canvas {
     return Object.freeze(obj);
   }
   function transitionGameState(state, event, payload = {}) {
-    const { state: currentState, lives, wave, gold, towers } = state;
+    const {
+      state: currentState,
+      lives,
+      wave,
+      gold,
+      totalKillRewardGold,
+      elapsedMs,
+      towers
+    } = state;
     switch (event) {
       case GameEvent.START:
         if (currentState === GameStateType.IDLE) {
@@ -1410,14 +1508,21 @@ canvas {
       case GameEvent.ENEMY_KILL:
         if (currentState === GameStateType.RUNNING) {
           const { reward } = payload;
-          return deepFreeze({ ...state, gold: gold + reward });
+          return deepFreeze({
+            ...state,
+            gold: gold + reward,
+            totalKillRewardGold: totalKillRewardGold + reward
+          });
         }
         break;
       case GameEvent.BUILD:
         if (currentState === GameStateType.IDLE || currentState === GameStateType.RUNNING) {
           const { towerCost, towerData } = payload;
           if (gold >= towerCost) {
-            const newTowers = [...towers, { ...towerData, id: `tower-slot-${towerData.slotId}` }];
+            const newTowers = [
+              ...towers,
+              { ...towerData, id: towerIdForSlot(towerData.slotId) }
+            ];
             return deepFreeze({ ...state, gold: gold - towerCost, towers: newTowers });
           }
         }
@@ -1441,6 +1546,12 @@ canvas {
         break;
       case GameEvent.RESTART:
         return createInitialState();
+      case GameEvent.TICK:
+        if (currentState === GameStateType.RUNNING) {
+          const advance = Math.max(0, payload.deltaMs || 0);
+          return deepFreeze({ ...state, elapsedMs: elapsedMs + advance });
+        }
+        break;
     }
     return state;
   }
@@ -1461,12 +1572,11 @@ canvas {
       })
     });
   }
-  function spawnEnemy(wave, waveIndex, spawnedCount) {
+  function spawnEnemy(wave, spawnedCount) {
     const enemyType = wave.enemies[spawnedCount];
     const enemySpec = ENEMY_STATS[enemyType];
-    const enemyId = `wave-${waveIndex + 1}-enemy-${spawnedCount + 1}`;
     return {
-      id: enemyId,
+      id: nextEnemyId(),
       type: enemyType,
       spec: { ...enemySpec, type: enemyType }
     };
@@ -1508,7 +1618,7 @@ canvas {
           newPrepTimeRemaining = 0;
           events.push({ type: "wave_start", wave: currentWaveIndex + 1 });
           if (newSpawnedCount < currentWave.enemies.length) {
-            spawns.push(spawnEnemy(currentWave, currentWaveIndex, newSpawnedCount));
+            spawns.push(spawnEnemy(currentWave, newSpawnedCount));
             newSpawnedCount++;
             newSpawnTimer = 0;
           }
@@ -1527,7 +1637,7 @@ canvas {
           newSpawnedCount = 0;
           events.push({ type: "wave_start", wave: currentWaveIndex + 1 });
           if (newSpawnedCount < currentWave.enemies.length) {
-            spawns.push(spawnEnemy(currentWave, currentWaveIndex, newSpawnedCount));
+            spawns.push(spawnEnemy(currentWave, newSpawnedCount));
             newSpawnedCount++;
             newSpawnTimer = 0;
           }
@@ -1547,7 +1657,7 @@ canvas {
         newSpawnTimer += deltaSeconds;
         while (newSpawnTimer >= currentWave.interval && newSpawnedCount < currentWave.enemies.length) {
           newSpawnTimer -= currentWave.interval;
-          spawns.push(spawnEnemy(currentWave, currentWaveIndex, newSpawnedCount));
+          spawns.push(spawnEnemy(currentWave, newSpawnedCount));
           newSpawnedCount++;
         }
         break;
@@ -1646,11 +1756,9 @@ canvas {
   }
 
   // dist/temp-src/entities/projectile.js
-  var _projectileIdCounter = 0;
   function createProjectile(spec, targetId, startPos) {
-    _projectileIdCounter++;
     return Object.freeze({
-      id: `projectile-${_projectileIdCounter}`,
+      id: nextProjectileId(),
       targetId,
       damage: spec.damage,
       damageType: spec.damageType,
@@ -1660,9 +1768,6 @@ canvas {
       y: startPos.y,
       lastKnownPos: { x: startPos.x, y: startPos.y }
     });
-  }
-  function resetProjectileIdCounter(value = 0) {
-    _projectileIdCounter = value;
   }
   function advanceProjectile(projectile, deltaSeconds, targetLookup) {
     if (!projectile.alive) {
@@ -1723,6 +1828,39 @@ canvas {
       distance: 0
     });
   }
+  function advanceEnemy(enemy, deltaSeconds, path) {
+    if (!enemy.alive) {
+      return {
+        enemy,
+        leaked: false,
+        distanceDelta: 0
+      };
+    }
+    const distanceDelta = enemy.speed * deltaSeconds;
+    const newDistance = enemy.distance + distanceDelta;
+    const pathEnd = path.totalLength;
+    if (newDistance >= pathEnd) {
+      const updatedEnemy2 = Object.freeze({
+        ...enemy,
+        alive: false,
+        distance: pathEnd
+      });
+      return {
+        enemy: updatedEnemy2,
+        leaked: true,
+        distanceDelta: pathEnd - enemy.distance
+      };
+    }
+    const updatedEnemy = Object.freeze({
+      ...enemy,
+      distance: newDistance
+    });
+    return {
+      enemy: updatedEnemy,
+      leaked: false,
+      distanceDelta
+    };
+  }
   function damageEnemy(enemy, damage, isPhysical) {
     if (!enemy.alive) {
       return enemy;
@@ -1742,45 +1880,101 @@ canvas {
     });
   }
 
+  // dist/temp-src/entities/effect.js
+  var EffectType = Object.freeze({
+    DEATH_PUFF: "death-puff",
+    HIT_SPARK: "hit-spark"
+  });
+  function createEffect(type, x, y, id) {
+    return Object.freeze({
+      id: id || nextEffectId(),
+      type,
+      x,
+      y,
+      alive: true,
+      age: 0,
+      // seconds since creation
+      lifetime: type === EffectType.DEATH_PUFF ? 0.5 : 0.3
+      // seconds
+    });
+  }
+  function advanceEffect(effect, deltaSeconds) {
+    if (!effect.alive) {
+      return { effect, alive: false };
+    }
+    const newAge = effect.age + deltaSeconds;
+    const alive = newAge < effect.lifetime;
+    const updatedEffect = Object.freeze({
+      ...effect,
+      age: newAge,
+      alive
+    });
+    return { effect: updatedEffect, alive };
+  }
+  function getEffectProgress(effect) {
+    if (effect.lifetime === 0) {
+      return 1;
+    }
+    return Math.min(1, effect.age / effect.lifetime);
+  }
+  function getEffectScale(effect) {
+    const progress = getEffectProgress(effect);
+    switch (effect.type) {
+      case EffectType.DEATH_PUFF:
+        return 1 + progress * 0.5;
+      case EffectType.HIT_SPARK:
+        return 1 - progress * 0.5;
+      default:
+        return 1;
+    }
+  }
+  function getEffectAlpha(effect) {
+    const progress = getEffectProgress(effect);
+    if (progress > 0.5) {
+      return 1 - (progress - 0.5) * 2;
+    }
+    return 1;
+  }
+
   // dist/temp-src/engine/game-engine.js
+  var ENTITY_CAPS = Object.freeze({
+    ENEMIES: 40,
+    PROJECTILES: 80,
+    EFFECTS: 100
+  });
   var GameEngine = class {
     constructor() {
       this._state = createInitialState();
-      this._towerSlots = Object.freeze(TOWER_SLOTS.map((pos, index) => Object.freeze({
-        index,
-        x: pos.x,
-        y: pos.y,
-        towerId: null
-      })));
+      this._towerSlots = Object.freeze(
+        TOWER_SLOTS.map(
+          (pos, index) => Object.freeze({
+            index,
+            x: pos.x,
+            y: pos.y,
+            towerId: null
+          })
+        )
+      );
       this._towerCooldowns = /* @__PURE__ */ new Map();
       this._waveController = createWaveController(WAVES);
-      resetProjectileIdCounter(0);
+      resetIdCounters();
     }
-    /**
-     * Get current game state (readonly)
-     * @returns {Readonly<GameState>}
-     */
+    /** @returns {Readonly<GameState>} */
     get state() {
       return this._state;
     }
-    /**
-     * Get tower slots (readonly)
-     * @returns {Readonly<Array>}
-     */
+    /** @returns {Readonly<Array>} */
     get towerSlots() {
       return this._towerSlots;
     }
-    /**
-     * Get a snapshot of current game state
-     * @returns {Readonly<GameState>}
-     */
+    /** @returns {Readonly<GameState>} */
     getSnapshot() {
       return this._state;
     }
     /**
-     * Build a tower on a slot
-     * @param {number} slotIndex - Slot index (0-6)
-     * @param {string} towerType - Tower type from TowerType
+     * Build a tower on a slot.
+     * @param {number} slotIndex
+     * @param {string} towerType
      * @returns {CommandResult}
      */
     buildTower(slotIndex, towerType) {
@@ -1824,8 +2018,8 @@ canvas {
       return { ok: true, snapshot: this._state };
     }
     /**
-     * Sell a tower from a slot
-     * @param {number} slotIndex - Slot index (0-6)
+     * Sell a tower from a slot. Returns the refund amount on success.
+     * @param {number} slotIndex
      * @returns {CommandResult}
      */
     sellTower(slotIndex) {
@@ -1855,10 +2049,7 @@ canvas {
       this._towerSlots = Object.freeze(newSlots);
       return { ok: true, snapshot: this._state, refund: refundAmount };
     }
-    /**
-     * Start the game - transitions from idle to running
-     * @returns {{events: Array}} Events that occurred
-     */
+    /** @returns {{events: Array}} */
     start() {
       if (this._state.state !== GameStateType.IDLE) {
         return { events: [] };
@@ -1866,19 +2057,16 @@ canvas {
       this._state = transitionGameState(this._state, GameEvent.START);
       return { events: [{ type: "game-start" }] };
     }
-    /**
-     * Get the wave controller for external access (e.g., HUD)
-     * @returns {Readonly<WaveController>}
-     */
+    /** @returns {Readonly<WaveController>} */
     getWaveController() {
       return this._waveController;
     }
     /**
-     * Tick the game engine - process wave spawning, tower attacks, and projectile movement.
-     * @param {number} deltaSeconds - Time elapsed in seconds
-     * @param {Enemy[]} enemies - Current enemies in the game
-     * @param {PathModel} path - The path enemies follow
-     * @returns {{enemies: Enemy[], events: Array}} Updated enemies and events that occurred
+     * Tick the game engine one fixed step.
+     * @param {number} deltaSeconds
+     * @param {Enemy[]} enemies
+     * @param {PathModel} path
+     * @returns {{enemies: Enemy[], events: Array}}
      */
     tick(deltaSeconds, enemies, path) {
       if (this._state.state !== GameStateType.RUNNING) {
@@ -1887,18 +2075,20 @@ canvas {
       const events = [];
       let updatedEnemies = [...enemies];
       let newProjectiles = [...this._state.projectiles];
-      const findEnemyById = (id) => {
-        return updatedEnemies.find((e) => e.id === id) || null;
-      };
-      const updateEnemy = (updatedEnemy) => {
-        updatedEnemies = updatedEnemies.map(
-          (e) => e.id === updatedEnemy.id ? updatedEnemy : e
-        );
+      let newEffects = [...this._state.effects];
+      const deltaMs = Math.max(0, deltaSeconds) * 1e3;
+      this._state = transitionGameState(this._state, GameEvent.TICK, { deltaMs });
+      const findEnemyById = (id) => updatedEnemies.find((e) => e.id === id) || null;
+      const updateEnemy = (u) => {
+        updatedEnemies = updatedEnemies.map((e) => e.id === u.id ? u : e);
       };
       const aliveEnemyCount = updatedEnemies.filter((e) => e.alive).length;
       const waveResult = updateWaveController(this._waveController, deltaSeconds, aliveEnemyCount);
       this._waveController = waveResult.controller;
       for (const spawn of waveResult.spawns) {
+        if (newEffects.length >= ENTITY_CAPS.EFFECTS) {
+          newEffects = newEffects.slice(newEffects.length - ENTITY_CAPS.EFFECTS + 1);
+        }
         const enemy = createEnemy(spawn.spec, spawn.id);
         updatedEnemies.push(enemy);
       }
@@ -1912,62 +2102,71 @@ canvas {
             this._state = transitionGameState(this._state, GameEvent.WAVE_COMPLETE);
             break;
           case "all_waves_complete":
-            events.push({ type: "game-win" });
-            this._state = transitionGameState(this._state, GameEvent.WIN);
+            this._pendingWinWave = waveEvent.wave;
             break;
         }
       }
-      for (const tower of this._state.towers) {
-        if (!tower.alive) {
-          continue;
+      for (const enemy of updatedEnemies) {
+        if (!enemy.alive) continue;
+        const result = advanceEnemy(enemy, deltaSeconds, path);
+        updateEnemy(result.enemy);
+        if (result.leaked) {
+          const leakEvents = this.processEnemyLeak(enemy.id, enemy.leakDamage);
+          events.push(...leakEvents);
         }
+      }
+      const towerEvents = [];
+      for (const tower of this._state.towers) {
+        if (!tower.alive) continue;
         let cooldown = this._towerCooldowns.get(tower.id) || 0;
         cooldown = Math.max(0, cooldown - deltaSeconds);
         if (cooldown === 0) {
           const target = selectTarget(tower, updatedEnemies, path);
           if (target !== null) {
             const targetPos = samplePath(path, target.distance);
-            const projectile = createProjectile(
-              {
-                speed: tower.projectileSpeed,
-                damage: tower.damage,
-                damageType: tower.type === TowerType.ARCHER ? "physical" : "magic"
-              },
-              target.id,
-              { x: targetPos.x, y: targetPos.y }
-            );
-            newProjectiles = [...newProjectiles, projectile];
-            cooldown = tower.attackInterval;
-            events.push({ type: "tower-attack", towerId: tower.id, targetId: target.id });
+            if (newProjectiles.length < ENTITY_CAPS.PROJECTILES) {
+              const projectile = createProjectile(
+                {
+                  speed: tower.projectileSpeed,
+                  damage: tower.damage,
+                  damageType: tower.type === TowerType.ARCHER ? "physical" : "magic"
+                },
+                target.id,
+                { x: targetPos.x, y: targetPos.y }
+              );
+              newProjectiles = [...newProjectiles, projectile];
+              cooldown = tower.attackInterval;
+              towerEvents.push({ type: "tower-attack", towerId: tower.id, targetId: target.id });
+            }
           }
         }
         this._towerCooldowns.set(tower.id, cooldown);
       }
+      events.push(...towerEvents);
       const advancedProjectiles = [];
       for (const projectile of newProjectiles) {
-        if (!projectile.alive) {
-          continue;
-        }
+        if (!projectile.alive) continue;
         const target = findEnemyById(projectile.targetId);
-        let projectileWithUpdatedTarget = projectile;
+        let withUpdatedTarget = projectile;
         if (target !== null && target.alive) {
           const targetPos = samplePath(path, target.distance);
-          projectileWithUpdatedTarget = Object.freeze({
+          withUpdatedTarget = Object.freeze({
             ...projectile,
             lastKnownPos: { x: targetPos.x, y: targetPos.y }
           });
         }
-        const result = advanceProjectile(
-          projectileWithUpdatedTarget,
-          deltaSeconds,
-          findEnemyById
-        );
+        const result = advanceProjectile(withUpdatedTarget, deltaSeconds, findEnemyById);
         if (result.hit) {
           const hitTarget = findEnemyById(projectile.targetId);
           if (hitTarget !== null && hitTarget.alive) {
             const damage = calculateDamage(projectile.damage, projectile.damageType, hitTarget);
             const damagedEnemy = damageEnemy(hitTarget, damage, projectile.damageType === "physical");
             updateEnemy(damagedEnemy);
+            if (newEffects.length < ENTITY_CAPS.EFFECTS) {
+              newEffects.push(
+                createEffect(EffectType.HIT_SPARK, result.targetPos.x, result.targetPos.y)
+              );
+            }
             events.push({
               type: "projectile-hit",
               projectileId: projectile.id,
@@ -1975,52 +2174,71 @@ canvas {
               damage
             });
             if (!damagedEnemy.alive) {
-              const newState = transitionGameState(this._state, GameEvent.ENEMY_KILL, {
+              const ks = transitionGameState(this._state, GameEvent.ENEMY_KILL, {
                 reward: hitTarget.reward
               });
-              this._state = Object.freeze(newState);
-              events.push({
-                type: "enemy-killed",
-                enemyId: hitTarget.id,
-                reward: hitTarget.reward
-              });
+              this._state = Object.freeze(ks);
+              const enemyPos = samplePath(path, hitTarget.distance);
+              if (newEffects.length < ENTITY_CAPS.EFFECTS) {
+                newEffects.push(createEffect(EffectType.DEATH_PUFF, enemyPos.x, enemyPos.y));
+              } else if (newEffects.length > 0) {
+                newEffects = newEffects.slice(1);
+                newEffects.push(createEffect(EffectType.DEATH_PUFF, enemyPos.x, enemyPos.y));
+              }
             }
           }
         } else {
           advancedProjectiles.push(result.projectile);
         }
       }
+      const advancedEffects = [];
+      for (const effect of newEffects) {
+        const result = advanceEffect(effect, deltaSeconds);
+        if (result.alive) advancedEffects.push(result.effect);
+      }
       this._state = Object.freeze({
         ...this._state,
-        projectiles: Object.freeze(advancedProjectiles)
+        projectiles: Object.freeze(advancedProjectiles),
+        effects: Object.freeze(advancedEffects)
       });
-      return { enemies: updatedEnemies, events };
+      if (this._pendingWinWave !== void 0) {
+        this._state = transitionGameState(this._state, GameEvent.WIN);
+        events.push({ type: "game-win" });
+        this._pendingWinWave = void 0;
+      }
+      const aliveEnemies = updatedEnemies.filter((e) => e.alive);
+      return { enemies: aliveEnemies, events };
     }
     /**
-     * Process an enemy leak event - called when an enemy reaches the end of the path
-     * @param {string} enemyId - The ID of the enemy that leaked
-     * @param {number} leakDamage - The damage the enemy deals (from enemy.leakDamage)
-     * @returns {{enemies: Enemy[], events: Array}} Updated enemies and events
+     * Process an enemy leak (an enemy reached the castle).
+     * @param {string} enemyId
+     * @param {number} leakDamage
+     * @returns {Array}
      */
     processEnemyLeak(enemyId, leakDamage) {
       const events = [];
       const newState = transitionGameState(this._state, GameEvent.ENEMY_LEAK, { leakDamage });
       this._state = Object.freeze(newState);
-      events.push({ type: "enemy-leak", enemyId, livesRemaining: this._state.lives });
+      events.push({
+        type: "enemy-leak",
+        enemyType: void 0,
+        // filled in by host element from lookup if needed
+        damage: leakDamage,
+        livesRemaining: this._state.lives
+      });
       if (this._state.state === GameStateType.LOST) {
         events.push({ type: "game-lose" });
         this._waveController = stopWaveController(this._waveController);
       }
-      return { events };
+      return events;
     }
-    /**
-     * Reset the engine to initial state
-     */
+    /** Reset the engine to initial state. Safe to call repeatedly. */
     reset() {
       this._state = createInitialState();
       this._towerCooldowns.clear();
       this._waveController = createWaveController(WAVES);
-      resetProjectileIdCounter(0);
+      this._pendingWinWave = void 0;
+      resetIdCounters();
     }
   };
 
@@ -2377,36 +2595,6 @@ canvas {
     }
   }
 
-  // dist/temp-src/entities/effect.js
-  var EffectType = Object.freeze({
-    DEATH_PUFF: "death-puff",
-    HIT_SPARK: "hit-spark"
-  });
-  function getEffectProgress(effect) {
-    if (effect.lifetime === 0) {
-      return 1;
-    }
-    return Math.min(1, effect.age / effect.lifetime);
-  }
-  function getEffectScale(effect) {
-    const progress = getEffectProgress(effect);
-    switch (effect.type) {
-      case EffectType.DEATH_PUFF:
-        return 1 + progress * 0.5;
-      case EffectType.HIT_SPARK:
-        return 1 - progress * 0.5;
-      default:
-        return 1;
-    }
-  }
-  function getEffectAlpha(effect) {
-    const progress = getEffectProgress(effect);
-    if (progress > 0.5) {
-      return 1 - (progress - 0.5) * 2;
-    }
-    return 1;
-  }
-
   // dist/temp-src/render/canvas-renderer.js
   var WORLD_WIDTH = 960;
   var WORLD_HEIGHT = 540;
@@ -2426,8 +2614,11 @@ canvas {
   var CanvasRenderer = class {
     /**
      * @param {HTMLCanvasElement} canvas - The canvas element to render to
+     * @param {Object} [options]
+     * @param {boolean} [options.reducedMotion=false] - When true, suppress
+     *   effect scale wobble (spec §12); game speed is unaffected.
      */
-    constructor(canvas) {
+    constructor(canvas, options) {
       this._canvas = canvas;
       this._ctx = canvas.getContext("2d");
       this._assetStore = new AssetStore();
@@ -2436,6 +2627,7 @@ canvas {
       this._cssHeight = WORLD_HEIGHT;
       this._selectedTowerId = null;
       this._damageTimes = /* @__PURE__ */ new Map();
+      this._reducedMotion = !!(options && options.reducedMotion);
     }
     /**
      * Get the asset store
@@ -2443,6 +2635,14 @@ canvas {
      */
     get assetStore() {
       return this._assetStore;
+    }
+    /**
+     * Toggle reduced-motion rendering. False by default (full wobble).
+     * Spec §12 says reduced motion must not change game speed.
+     * @param {boolean} value
+     */
+    setReducedMotion(value) {
+      this._reducedMotion = Boolean(value);
     }
     /**
      * Get/set selected tower ID (for range indicator)
@@ -2695,7 +2895,7 @@ canvas {
       const ctx = this._ctx;
       for (const effect of effects) {
         if (!effect.alive) continue;
-        const scale = getEffectScale(effect);
+        const wobble = this._reducedMotion ? 1 : getEffectScale(effect);
         const alpha = getEffectAlpha(effect);
         let color;
         switch (effect.type) {
@@ -2712,7 +2912,7 @@ canvas {
         ctx.fillStyle = color;
         ctx.beginPath();
         const baseSize = 15;
-        ctx.arc(effect.x, effect.y, baseSize * scale, 0, Math.PI * 2);
+        ctx.arc(effect.x, effect.y, baseSize * wobble, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
       }
@@ -2859,26 +3059,46 @@ canvas {
       this._modal = null;
       this._muted = false;
       this._locale = DEFAULT_LOCALE;
-      this._audio = new AudioManager();
+      this._audio = new AudioManager((detail) => this._reportAudioError(detail));
+      this._audioBroken = false;
+      this._reducedMotion = this._readReducedMotion();
       this._engine = null;
       this._gameLoop = null;
       this._renderer = null;
       this._pointerController = null;
       this._path = null;
       this._canvas = null;
+      this._resizeObserver = null;
+      this._autoPaused = false;
       this._gameSnapshot = {
         state: "idle",
         lives: PLAYER_CONFIG.initialLives,
         gold: PLAYER_CONFIG.initialGold,
         wave: 0,
-        totalWaves: 5,
+        totalWaves,
         towers: [],
         enemies: [],
         projectiles: [],
         effects: [],
-        towerSlots: []
+        towerSlots: [],
+        elapsedMs: 0,
+        totalKillRewardGold: 0
       };
       this._initShadowDOM();
+    }
+    /**
+     * Read the prefers-reduced-motion media query. Defaults to false when
+     * matchMedia isn't available (server-side, very old browsers).
+     * @returns {boolean}
+     */
+    _readReducedMotion() {
+      if (typeof window === "undefined" || !window.matchMedia) return false;
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    }
+    /** Forward an audio error to a game-error event per spec §7.3. */
+    _reportAudioError(detail) {
+      this._audioBroken = true;
+      this._dispatchEvent("game-error", detail);
     }
     _initShadowDOM() {
       const styleEl = document.createElement("style");
@@ -2898,9 +3118,9 @@ canvas {
         this.muted = !this.muted;
       });
       this._hud.onPauseClick(() => {
-        if (this._state === "running") {
-          this.pause();
-        } else if (this._state === "paused") {
+        if (this._state === "running") this.pause();
+        else if (this._state === "paused") {
+          if (this._autoPaused) this._autoPaused = false;
           this.resume();
         }
       });
@@ -2917,84 +3137,29 @@ canvas {
         this._handleSellTower(slotIndex);
       });
       this._modal.onResume(() => {
+        this._autoPaused = false;
         this.resume();
       });
-      this._modal.onRestart(() => {
-        this.restart();
-      });
+      this._modal.onRestart(() => this.restart());
       this.shadowRoot.addEventListener("escape-pressed", () => {
         this._buildMenu.hide();
       });
-      this.shadowRoot.querySelector(".stage")?.addEventListener("click", (e) => {
-        if (e.target.classList.contains("stage") || e.target.tagName === "CANVAS") {
-          if (this._buildMenu.isShowing() && !e.target.classList.contains("build-menu")) {
-            const menu = this.shadowRoot.querySelector(".build-menu");
-            if (menu && !menu.contains(e.target)) {
-              this._buildMenu.hide();
-            }
-          }
-        }
-      });
     }
     /**
-     * Handle building a tower
-     * @param {number} slotIndex
-     * @param {string} towerType
-     */
-    _handleBuildTower(slotIndex, towerType) {
-      if (!this._engine) {
-        return;
-      }
-      const result = this._engine.buildTower(slotIndex, towerType);
-      if (result.ok) {
-        this._gameSnapshot = {
-          ...this._gameSnapshot,
-          gold: result.snapshot.gold,
-          towers: result.snapshot.towers
-        };
-        this._updateHUD(this._gameSnapshot);
-        this._buildMenu.hide();
-        this._audio.play("build");
-        const tower = result.snapshot.towers.find((t) => t.slotId === slotIndex);
-        if (tower) {
-          this._dispatchEvent("tower-built", { towerId: tower.id, towerType });
-        }
-      }
-    }
-    /**
-     * Handle selling a tower
-     * @param {number} slotIndex
-     */
-    _handleSellTower(slotIndex) {
-      if (!this._engine) {
-        return;
-      }
-      const result = this._engine.sellTower(slotIndex);
-      if (result.ok) {
-        this._gameSnapshot = {
-          ...this._gameSnapshot,
-          gold: result.snapshot.gold,
-          towers: result.snapshot.towers
-        };
-        this._updateHUD(this._gameSnapshot);
-        this._buildMenu.hide();
-        this._audio.play("sell");
-        this._dispatchEvent("tower-sold", { towerId: `tower-slot-${slotIndex}`, refund: result.refund });
-      }
-    }
-    /**
-     * Dispatch a custom event
+     * Dispatch a CustomEvent with bubbles+composed (spec §3.5).
      * @param {string} type
      * @param {Object} detail
      */
     _dispatchEvent(type, detail) {
-      this.dispatchEvent(new CustomEvent(type, {
-        bubbles: true,
-        composed: true,
-        detail
-      }));
+      this.dispatchEvent(
+        new CustomEvent(type, {
+          bubbles: true,
+          composed: true,
+          detail
+        })
+      );
     }
-    // Attributes
+    // ─── Attribute getters/setters ─────────────────────────────────────────────
     get width() {
       return parseInt(this.getAttribute(ATTRIBUTES.WIDTH) || DEFAULT_WIDTH, 10);
     }
@@ -3017,67 +3182,54 @@ canvas {
       return this.hasAttribute(ATTRIBUTES.AUTO_START);
     }
     set autoStart(value) {
-      if (value) {
-        this.setAttribute(ATTRIBUTES.AUTO_START, "");
-      } else {
-        this.removeAttribute(ATTRIBUTES.AUTO_START);
-      }
+      if (value) this.setAttribute(ATTRIBUTES.AUTO_START, "");
+      else this.removeAttribute(ATTRIBUTES.AUTO_START);
     }
     get muted() {
       return this._muted;
     }
     set muted(value) {
       this._muted = Boolean(value);
-      if (this._audio) {
-        this._audio.setMuted(this._muted);
-      }
-      if (this._hud) {
-        this._hud.setMuted(this._muted);
-      }
-      if (value) {
-        this.setAttribute(ATTRIBUTES.MUTED, "");
-      } else {
-        this.removeAttribute(ATTRIBUTES.MUTED);
-      }
+      if (this._audio) this._audio.setMuted(this._muted);
+      if (this._hud) this._hud.setMuted(this._muted);
+      if (value) this.setAttribute(ATTRIBUTES.MUTED, "");
+      else this.removeAttribute(ATTRIBUTES.MUTED);
     }
-    // State (readonly)
     get state() {
       return this._state;
     }
-    // Pause state helper
     get paused() {
       return this._state === "paused";
     }
     set paused(value) {
-      if (value) {
-        this.pause();
-      } else {
-        this.resume();
-      }
+      if (value) this.pause();
+      else this.resume();
     }
-    // Methods
-    /**
-     * Initialize the game engine and start the game loop
-     */
+    // ─── Lifecycle ─────────────────────────────────────────────────────────────
     _initGameEngine() {
-      if (this._engine) {
-        return;
-      }
+      if (this._engine) return;
       this._engine = new GameEngine();
     }
     /**
-     * Create and start the game loop
+     * Recompute CSS size from the host element and apply to renderer.
+     * Called by the ResizeObserver and once at construction.
      */
+    _applyResize() {
+      if (!this._canvas || !this._renderer) return;
+      const rect = this.getBoundingClientRect();
+      const cssWidth = Math.max(1, Math.floor(rect.width));
+      const cssHeight = Math.max(1, Math.floor(rect.height));
+      const dpr = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1;
+      this._renderer.resize(cssWidth, cssHeight, dpr);
+    }
     _startGameLoop() {
-      if (this._gameLoop) {
-        return;
-      }
-      const now = () => performance.now();
+      if (this._gameLoop) return;
+      const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
       const requestFrame = (cb) => requestAnimationFrame(cb);
       const cancelFrame = (id) => cancelAnimationFrame(id);
       this._gameLoop = createGameLoop({
-        update: (deltaSeconds) => this._update(deltaSeconds),
-        render: (interpolation) => this._render(interpolation),
+        update: (delta) => this._update(delta),
+        render: (interp) => this._render(interp),
         now,
         requestFrame,
         cancelFrame
@@ -3085,46 +3237,17 @@ canvas {
       this._gameLoop.start();
     }
     /**
-     * Update game state for fixed timestep
+     * One fixed-timestep game update.
+     * Translates engine events into spec-shaped (§3.5) public events.
      * @param {number} deltaSeconds
      */
     _update(deltaSeconds) {
-      if (!this._engine || !this._path) {
-        return;
-      }
+      if (!this._engine || !this._path) return;
       const snapshot = this._engine.getSnapshot();
       const enemies = [...snapshot.enemies];
       const result = this._engine.tick(deltaSeconds, enemies, this._path);
       for (const event of result.events) {
-        switch (event.type) {
-          case "wave-start":
-            this._audio.play("wave-start");
-            this._dispatchEvent("wave-start", { wave: event.wave });
-            break;
-          case "wave-complete":
-            this._dispatchEvent("wave-complete", { wave: event.wave });
-            break;
-          case "tower-attack":
-            break;
-          case "projectile-hit":
-            break;
-          case "enemy-killed":
-            this._audio.play("enemy-killed");
-            this._dispatchEvent("enemy-killed", { enemyId: event.enemyId, reward: event.reward });
-            break;
-          case "enemy-leak":
-            this._audio.play("enemy-leak");
-            this._dispatchEvent("enemy-leaked", { enemyId: event.enemyId, livesRemaining: event.livesRemaining });
-            break;
-          case "game-win":
-            this._audio.play("victory");
-            this._dispatchEvent("game-win", {});
-            break;
-          case "game-lose":
-            this._audio.play("defeat");
-            this._dispatchEvent("game-lose", {});
-            break;
-        }
+        this._handleEngineEvent(event);
       }
       const updatedEnemies = result.enemies.filter((e) => e.alive);
       const engineSnapshot = this._engine.getSnapshot();
@@ -3136,27 +3259,111 @@ canvas {
       });
     }
     /**
-     * Render the game
+     * Translate engine-internal events into spec-shaped public events.
+     * §3.5 detail tables are matched exactly here.
+     * @param {Object} event
+     */
+    _handleEngineEvent(event) {
+      switch (event.type) {
+        case "wave-start": {
+          this._safePlay("wave-start");
+          this._dispatchEvent("wave-start", {
+            wave: event.wave,
+            totalWaves
+          });
+          this.showAnnouncement(`Wave ${event.wave}`);
+          break;
+        }
+        case "wave-complete": {
+          const snap = this._engine.getSnapshot();
+          this._dispatchEvent("wave-complete", {
+            wave: event.wave,
+            remainingLives: snap.lives,
+            gold: snap.gold
+          });
+          break;
+        }
+        case "tower-attack":
+          break;
+        case "projectile-hit":
+          this._safePlay("hit");
+          break;
+        case "enemy-leak": {
+          this._safePlay("enemy-leak");
+          this._dispatchEvent("enemy-leaked", {
+            enemyType: event.enemyType,
+            damage: event.damage,
+            remainingLives: event.livesRemaining
+          });
+          break;
+        }
+        case "game-win": {
+          this._safePlay("victory");
+          const snap = this._engine.getSnapshot();
+          const score = this._computeScoreSnapshot(snap, "win");
+          this._dispatchEvent("game-win", {
+            elapsedMs: snap.elapsedMs,
+            remainingLives: snap.lives,
+            gold: snap.gold,
+            score
+          });
+          break;
+        }
+        case "game-lose": {
+          this._safePlay("defeat");
+          const snap = this._engine.getSnapshot();
+          const score = this._computeScoreSnapshot(snap, "lose");
+          this._dispatchEvent("game-lose", {
+            elapsedMs: snap.elapsedMs,
+            completedWave: snap.wave,
+            score
+          });
+          break;
+        }
+      }
+    }
+    /**
+     * Convenience: compute the score breakdown for the current snapshot.
+     * @param {GameSnapshot} snap
+     * @param {'win'|'lose'} outcome
+     */
+    _computeScoreSnapshot(snap, outcome) {
+      return calculateScore2({
+        outcome,
+        totalKillRewardGold: snap.totalKillRewardGold || 0,
+        lives: snap.lives || 0,
+        elapsedMs: snap.elapsedMs || 0,
+        completedWave: snap.wave || 0
+      });
+    }
+    /** Play a sound only when audio is healthy. */
+    _safePlay(name) {
+      if (this._audioBroken) return;
+      if (this._audio && !this._audio.muted) this._audio.play(name);
+    }
+    /**
+     * Render the canvas. Lazily creates the renderer on first call so SSR /
+     * test environments without a 2D context still work.
      * @param {number} interpolation
      */
     _render(interpolation) {
-      if (!this._gameSnapshot) {
-        return;
-      }
+      if (!this._gameSnapshot) return;
       if (!this._renderer && this._canvas) {
         try {
           const ctx = this._canvas.getContext("2d");
-          if (ctx) {
-            this._renderer = new CanvasRenderer(this._canvas);
-            this._renderer.resize(this.width, this.height, window.devicePixelRatio || 1);
-          }
+          if (!ctx) return;
+          this._renderer = new CanvasRenderer(this._canvas, {
+            reducedMotion: this._reducedMotion
+          });
+          this._applyResize();
+          this._renderer.assetStore.loadAll();
         } catch (e) {
           return;
         }
+      } else if (this._renderer) {
+        this._renderer.setReducedMotion(this._reducedMotion);
       }
-      if (!this._renderer) {
-        return;
-      }
+      if (!this._renderer) return;
       try {
         const renderSnapshot = {
           ...this._gameSnapshot,
@@ -3165,21 +3372,26 @@ canvas {
         };
         this._renderer.render(renderSnapshot, interpolation);
       } catch (error) {
-        console.error("Render error:", error);
-        this._dispatchEvent("game-error", { error: error.message });
+        this._dispatchEvent("game-error", {
+          code: "RENDER_ERROR",
+          message: error.message
+        });
         this.pause();
       }
     }
+    // ─── Public API ────────────────────────────────────────────────────────────
+    /**
+     * Start (or restart-from-idle) the game.
+     */
     start() {
-      if (this._state === "destroyed") {
-        return;
-      }
+      if (this._state === "destroyed") return;
       this._initGameEngine();
       this._startGameLoop();
+      this._wireResizeAndVisibility();
       const result = this._engine.start();
       for (const event of result.events) {
         if (event.type === "game-start") {
-          this._dispatchEvent("game-start", {});
+          this._dispatchEvent("game-start", { wave: 1 });
         }
       }
       if (!this._pointerController && this._canvas) {
@@ -3191,74 +3403,77 @@ canvas {
       }
       this._state = "running";
       this._gameSnapshot.state = "running";
-      this._audio.play("wave-start");
+      this._autoPaused = false;
+      this._safePlay("wave-start");
     }
+    /**
+     * Pause a running game.
+     */
     pause() {
-      if (this._state !== "running") {
-        return;
-      }
+      if (this._state !== "running") return;
       this._state = "paused";
       this._gameSnapshot.state = "paused";
-      if (this._gameLoop) {
-        this._gameLoop.pause();
-      }
-      if (this._hud) {
-        this._hud.setPaused(true);
-      }
-      if (this._modal) {
+      if (this._gameLoop) this._gameLoop.pause();
+      if (this._hud) this._hud.setPaused(true);
+      if (this._modal && !this._autoPaused) {
         this._modal.showPaused();
       }
-      this._dispatchEvent("game-pause", {});
-    }
-    resume() {
-      if (this._state !== "paused") {
-        return;
+      if (this._autoPaused && this._modal) {
+        this._modal.showPaused();
       }
+      const elapsedMs = this._engine ? this._engine.getSnapshot().elapsedMs : 0;
+      this._dispatchEvent("game-pause", { elapsedMs });
+    }
+    /**
+     * Resume a paused game.
+     */
+    resume() {
+      if (this._state !== "paused") return;
       this._state = "running";
       this._gameSnapshot.state = "running";
-      if (this._gameLoop) {
-        this._gameLoop.resume();
-      }
-      if (this._hud) {
-        this._hud.setPaused(false);
-      }
-      if (this._modal) {
-        this._modal.hide();
-      }
-      this._dispatchEvent("game-resume", {});
+      this._autoPaused = false;
+      if (this._gameLoop) this._gameLoop.resume();
+      if (this._hud) this._hud.setPaused(false);
+      if (this._modal) this._modal.hide();
+      const elapsedMs = this._engine ? this._engine.getSnapshot().elapsedMs : 0;
+      this._dispatchEvent("game-resume", { elapsedMs });
     }
+    /**
+     * Restart the game from scratch.
+     * Per spec, the user expects the element to be back in 'running', not
+     * idle, after restart (previous behavior returned to idle and left the
+     * game paused — confusing UX). This call resets state and immediately
+     * re-enters the running state.
+     */
     restart() {
+      if (this._state === "destroyed") return;
       if (this._gameLoop) {
         this._gameLoop.stop();
         this._gameLoop = null;
       }
-      if (this._engine) {
-        this._engine.reset();
-      }
-      this._state = "idle";
+      if (this._engine) this._engine.reset();
       this._gameSnapshot = {
         state: "idle",
         lives: PLAYER_CONFIG.initialLives,
         gold: PLAYER_CONFIG.initialGold,
         wave: 0,
-        totalWaves: 5,
+        totalWaves,
         towers: [],
         enemies: [],
         projectiles: [],
         effects: [],
-        towerSlots: this._engine ? this._engine.towerSlots : []
+        towerSlots: this._engine ? this._engine.towerSlots : [],
+        elapsedMs: 0,
+        totalKillRewardGold: 0
       };
-      if (this._modal) {
-        this._modal.hide();
-      }
-      if (this._buildMenu) {
-        this._buildMenu.hide();
-      }
-      if (this._hud) {
-        this._hud.update(this._gameSnapshot);
-      }
-      this._dispatchEvent("game-restart", {});
+      if (this._modal) this._modal.hide();
+      if (this._buildMenu) this._buildMenu.hide();
+      if (this._hud) this._hud.update(this._gameSnapshot);
+      this.start();
     }
+    /**
+     * Destroy the component. Stops RAF, releases audio, tears down observers.
+     */
     destroy() {
       this._state = "destroyed";
       this._gameSnapshot.state = "destroyed";
@@ -3286,96 +3501,78 @@ canvas {
         this._pointerController.destroy();
         this._pointerController = null;
       }
-      if (this._renderer) {
-        this._renderer = null;
+      if (this._resizeObserver) {
+        this._resizeObserver.disconnect();
+        this._resizeObserver = null;
       }
+      if (this._visibilityHandler && typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", this._visibilityHandler);
+        this._visibilityHandler = null;
+      }
+      this._renderer = null;
       this._engine = null;
     }
     /**
-     * Updates the internal game snapshot. Called by the game loop.
+     * Update the internal snapshot. The engine can call this; UI handlers can
+     * also call it for synthetic state transitions.
      * @param {Object} snapshot
      */
     updateSnapshot(snapshot) {
       const prevState = this._gameSnapshot.state;
       const prevWave = this._gameSnapshot.wave;
       this._gameSnapshot = {
-        state: snapshot.state || this._state,
-        lives: snapshot.lives,
-        gold: snapshot.gold,
-        wave: snapshot.wave,
-        totalWaves: snapshot.totalWaves,
-        towers: snapshot.towers || this._gameSnapshot.towers,
+        ...this._gameSnapshot,
+        ...snapshot,
+        towerSlots: snapshot.towerSlots || this._gameSnapshot.towerSlots,
         enemies: snapshot.enemies || this._gameSnapshot.enemies,
         projectiles: snapshot.projectiles || this._gameSnapshot.projectiles,
-        effects: snapshot.effects || this._gameSnapshot.effects,
-        towerSlots: snapshot.towerSlots || this._gameSnapshot.towerSlots,
-        elapsedMs: snapshot.elapsedMs
+        effects: snapshot.effects || this._gameSnapshot.effects
       };
       if (this._gameSnapshot.state === "won" && prevState !== "won") {
-        if (this._modal) {
-          this._modal.showVictory(this._gameSnapshot);
-        }
-        this._audio.play("victory");
-        this._dispatchEvent("game-win", {});
+        if (this._modal) this._modal.showVictory(this._gameSnapshot);
+        this._safePlay("victory");
+        this._dispatchEvent("game-win", {
+          elapsedMs: this._gameSnapshot.elapsedMs || 0,
+          remainingLives: this._gameSnapshot.lives || 0,
+          gold: this._gameSnapshot.gold || 0,
+          score: this._computeScoreSnapshot(this._gameSnapshot, "win").winScore
+        });
       } else if (this._gameSnapshot.state === "lost" && prevState !== "lost") {
-        if (this._modal) {
-          this._modal.showDefeat(this._gameSnapshot);
-        }
-        this._audio.play("defeat");
-        this._dispatchEvent("game-lose", {});
-      }
-      if (snapshot.wave && snapshot.wave !== prevWave) {
-        if (snapshot.wave > prevWave) {
-          this._audio.play("wave-start");
-          this._dispatchEvent("wave-start", { wave: snapshot.wave });
-        }
+        if (this._modal) this._modal.showDefeat(this._gameSnapshot);
+        this._safePlay("defeat");
+        this._dispatchEvent("game-lose", {
+          elapsedMs: this._gameSnapshot.elapsedMs || 0,
+          completedWave: this._gameSnapshot.wave || 0,
+          score: this._computeScoreSnapshot(this._gameSnapshot, "lose").loseScore
+        });
       }
       this._updateHUD(this._gameSnapshot);
     }
-    /**
-     * Returns a frozen snapshot of current game state
-     * @returns {Object} GameSnapshot
-     */
+    /** @returns {Readonly<GameSnapshot>} */
     getSnapshot() {
       return Object.freeze({ ...this._gameSnapshot });
     }
-    /**
-     * Updates the HUD with the given snapshot
-     * @param {Object} snapshot
-     */
     _updateHUD(snapshot) {
-      if (this._hud) {
-        this._hud.update(snapshot);
-      }
-      if (this._buildMenu && this._buildMenu.isShowing()) {
-        this._buildMenu.update();
-      }
+      if (this._hud) this._hud.update(snapshot);
+      if (this._buildMenu && this._buildMenu.isShowing()) this._buildMenu.update();
     }
     /**
-     * Show an announcement (wave start, etc.)
+     * Show a transient announcement in the aria-live region.
      * @param {string} text
      */
     showAnnouncement(text) {
-      const announcement = this.shadowRoot.querySelector(".announcement");
-      if (announcement) {
-        announcement.textContent = text;
-        announcement.classList.add("visible");
-        setTimeout(() => {
-          announcement.classList.remove("visible");
-        }, 2e3);
-      }
+      const node = this.shadowRoot?.querySelector(".announcement");
+      if (!node) return;
+      node.textContent = text;
+      node.classList.add("visible");
+      setTimeout(() => {
+        node.classList.remove("visible");
+      }, 2e3);
     }
-    /**
-     * Set the pointer controller for handling tower slot clicks
-     * @param {PointerController} controller
-     */
+    /** Allow tests to inject a PointerController implementation. */
     setPointerController(controller) {
       this._pointerController = controller;
     }
-    /**
-     * Handle tower slot click from pointer controller
-     * @param {{x: number, y: number}} worldPos
-     */
     _handleTowerSlotClick(worldPos) {
       const slots = TOWER_SLOTS.map((pos, index) => ({
         id: `tower-slot-${index}`,
@@ -3383,21 +3580,83 @@ canvas {
         y: pos.y
       }));
       const hitSlot = hitTestTowerSlot(worldPos, slots, 35);
-      if (hitSlot) {
-        if (this._buildMenu.isShowing() && this._buildMenu._currentSlotId === hitSlot.id) {
-          this._buildMenu.hide();
-        } else {
-          this._buildMenu.show(hitSlot.id, { x: hitSlot.x, y: hitSlot.y });
-        }
-      } else {
+      if (!hitSlot) {
         this._buildMenu.hide();
+        return;
+      }
+      if (this._buildMenu.isShowing() && this._buildMenu._currentSlotId === hitSlot.id) {
+        this._buildMenu.hide();
+      } else {
+        this._buildMenu.show(hitSlot.id, { x: hitSlot.x, y: hitSlot.y });
       }
     }
-    // Lifecycle
-    connectedCallback() {
-      if (this.autoStart) {
-        this.start();
+    _handleBuildTower(slotIndex, towerType) {
+      if (!this._engine) return;
+      const result = this._engine.buildTower(slotIndex, towerType);
+      if (!result.ok) return;
+      const snap = result.snapshot;
+      const tower = snap.towers.find((t) => t.slotId === slotIndex);
+      this.updateSnapshot({
+        ...this._gameSnapshot,
+        gold: snap.gold,
+        towers: snap.towers
+      });
+      this._buildMenu.hide();
+      this._safePlay("build");
+      if (tower) {
+        this._dispatchEvent("tower-built", {
+          slotId: `tower-slot-${slotIndex}`,
+          towerType,
+          cost: tower.cost,
+          gold: snap.gold
+        });
       }
+    }
+    _handleSellTower(slotIndex) {
+      if (!this._engine) return;
+      const result = this._engine.sellTower(slotIndex);
+      if (!result.ok) return;
+      const snap = result.snapshot;
+      this.updateSnapshot({
+        ...this._gameSnapshot,
+        gold: snap.gold,
+        towers: snap.towers
+      });
+      this._buildMenu.hide();
+      this._safePlay("sell");
+      this._dispatchEvent("tower-sold", {
+        slotId: `tower-slot-${slotIndex}`,
+        towerType: snap.towers.length === 0 ? "" : "",
+        // tower no longer in state
+        refund: result.refund,
+        gold: snap.gold
+      });
+    }
+    // ─── ResizeObserver + visibilitychange (spec §5.4, §13) ───────────────────
+    _wireResizeAndVisibility() {
+      if (typeof ResizeObserver !== "undefined" && !this._resizeObserver && typeof this.getBoundingClientRect === "function") {
+        this._resizeObserver = new ResizeObserver(() => this._applyResize());
+        this._resizeObserver.observe(this);
+      }
+      if (typeof document !== "undefined" && !this._visibilityHandler) {
+        this._visibilityHandler = () => this._handleVisibilityChange();
+        document.addEventListener("visibilitychange", this._visibilityHandler);
+      }
+    }
+    /**
+     * Spec §13: when the element is hidden, auto-pause and keep the player
+     * paused on return until they explicitly resume.
+     */
+    _handleVisibilityChange() {
+      if (typeof document === "undefined") return;
+      if (document.hidden && this._state === "running") {
+        this._autoPaused = true;
+        this.pause();
+      }
+    }
+    // ─── Web Component lifecycle ──────────────────────────────────────────────
+    connectedCallback() {
+      if (this.autoStart) this.start();
     }
     disconnectedCallback() {
       this.destroy();
@@ -3407,15 +3666,13 @@ canvas {
       switch (name) {
         case ATTRIBUTES.LOCALE:
           this._locale = newValue || DEFAULT_LOCALE;
-          if (this._hud) {
-            this._hud.setLocale(this._locale);
-          }
+          if (this._hud) this._hud.setLocale(this._locale);
           break;
         case ATTRIBUTES.MUTED:
           this._muted = this.hasAttribute(ATTRIBUTES.MUTED);
-          if (this._hud) {
-            this._hud.setMuted(this._muted);
-          }
+          if (this._hud) this._hud.setMuted(this._muted);
+          break;
+        default:
           break;
       }
     }

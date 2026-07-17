@@ -36,8 +36,11 @@ const ORB_HEIGHT = 16;
 export class CanvasRenderer {
   /**
    * @param {HTMLCanvasElement} canvas - The canvas element to render to
+   * @param {Object} [options]
+   * @param {boolean} [options.reducedMotion=false] - When true, suppress
+   *   effect scale wobble (spec §12); game speed is unaffected.
    */
-  constructor(canvas) {
+  constructor(canvas, options) {
     this._canvas = canvas;
     this._ctx = canvas.getContext('2d');
     this._assetStore = new AssetStore();
@@ -46,6 +49,7 @@ export class CanvasRenderer {
     this._cssHeight = WORLD_HEIGHT;
     this._selectedTowerId = null;
     this._damageTimes = new Map(); // Track when enemies were last damaged
+    this._reducedMotion = !!(options && options.reducedMotion);
   }
 
   /**
@@ -54,6 +58,15 @@ export class CanvasRenderer {
    */
   get assetStore() {
     return this._assetStore;
+  }
+
+  /**
+   * Toggle reduced-motion rendering. False by default (full wobble).
+   * Spec §12 says reduced motion must not change game speed.
+   * @param {boolean} value
+   */
+  setReducedMotion(value) {
+    this._reducedMotion = Boolean(value);
   }
 
   /**
@@ -399,7 +412,9 @@ export class CanvasRenderer {
     for (const effect of effects) {
       if (!effect.alive) continue;
 
-      const scale = getEffectScale(effect);
+      // Spec §12: prefers-reduced-motion suppresses the per-frame scale
+      // wobble so the effect still appears but does not animate its size.
+      const wobble = this._reducedMotion ? 1 : getEffectScale(effect);
       const alpha = getEffectAlpha(effect);
 
       let color;
@@ -420,7 +435,7 @@ export class CanvasRenderer {
       ctx.beginPath();
 
       const baseSize = 15;
-      ctx.arc(effect.x, effect.y, baseSize * scale, 0, Math.PI * 2);
+      ctx.arc(effect.x, effect.y, baseSize * wobble, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.globalAlpha = 1;

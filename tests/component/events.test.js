@@ -134,14 +134,14 @@ describe('mini-tower-defense events', () => {
       expect(element.state).toBe('running');
     });
 
-    it('game-start event has correct properties', () => {
+    it('game-start event has correct detail shape', () => {
       let eventDetail = null;
       element.addEventListener('game-start', (e) => {
         eventDetail = e.detail;
       });
 
       element.start();
-      expect(eventDetail).toEqual({});
+      expect(eventDetail).toEqual({ wave: 1 });
     });
 
     it('updateSnapshot updates internal state', () => {
@@ -178,7 +178,7 @@ describe('mini-tower-defense events', () => {
       expect(element.state).toBe('running');
     });
 
-    it('restart() resets state to idle', () => {
+    it('restart() resets state and keeps game running', () => {
       element.start();
       element.updateSnapshot({
         state: 'running',
@@ -192,10 +192,12 @@ describe('mini-tower-defense events', () => {
       element.restart();
 
       const snapshot = element.getSnapshot();
-      expect(snapshot.state).toBe('idle');
+      // Per spec §13: restart resets state and re-enters running immediately.
+      expect(snapshot.state).toBe('running');
       expect(snapshot.lives).toBe(10);
       expect(snapshot.gold).toBe(140);
       expect(snapshot.wave).toBe(0);
+      expect(element.state).toBe('running');
     });
   });
 
@@ -311,37 +313,38 @@ describe('mini-tower-defense events', () => {
   });
 
   describe('tower-built and tower-sold events', () => {
-    it('dispatches tower-built event when tower is built', () => {
+    it('dispatches tower-built event with spec detail shape', () => {
       let eventDetail = null;
       element.addEventListener('tower-built', (e) => {
         eventDetail = e.detail;
       });
 
-      // Simulate building via the internal method
       element.start();
       element._handleBuildTower(0, 'archer');
 
       expect(eventDetail).toBeTruthy();
-      expect(eventDetail.towerId).toBe('tower-slot-0');
+      // Spec §3.5: { slotId, towerType, cost, gold }
+      expect(eventDetail.slotId).toBe('tower-slot-0');
       expect(eventDetail.towerType).toBe('archer');
+      expect(eventDetail.cost).toBe(60);
+      expect(eventDetail.gold).toBe(80); // 140 - 60
     });
 
-    it('dispatches tower-sold event when tower is sold', () => {
+    it('dispatches tower-sold event with spec detail shape', () => {
       let eventDetail = null;
       element.addEventListener('tower-sold', (e) => {
         eventDetail = e.detail;
       });
 
-      // First build a tower
       element.start();
       element._handleBuildTower(0, 'archer');
-
-      // Then sell it
       element._handleSellTower(0);
 
       expect(eventDetail).toBeTruthy();
-      expect(eventDetail.towerId).toBe('tower-slot-0');
-      expect(eventDetail.refund).toBe(36); // 60 * 0.60 = 36
+      // Spec §3.5: { slotId, towerType, refund, gold }
+      expect(eventDetail.slotId).toBe('tower-slot-0');
+      expect(eventDetail.refund).toBe(36); // floor(60 * 0.60)
+      expect(eventDetail.gold).toBe(116); // 80 after build + 36 refund
     });
 
     it('gold is deducted when building archer tower', () => {
@@ -385,23 +388,21 @@ describe('mini-tower-defense events', () => {
   });
 
   describe('wave-start event', () => {
-    it('dispatches wave-start event when wave advances', () => {
+    it('dispatches wave-start event with spec detail shape when engine emits one', () => {
+      // wave-start comes from the engine's wave controller, not from snapshot
+      // changes. We drive the element-level event translator directly so the
+      // assertion focuses on the spec's event-detail contract.
+      element.start();
       let eventDetail = null;
       element.addEventListener('wave-start', (e) => {
         eventDetail = e.detail;
       });
 
-      element.updateSnapshot({
-        state: 'running',
-        lives: 10,
-        gold: 140,
-        wave: 1,
-        totalWaves: 5,
-        towers: []
-      });
+      element._handleEngineEvent({ type: 'wave-start', wave: 1 });
 
       expect(eventDetail).toBeTruthy();
-      expect(eventDetail.wave).toBe(1);
+      // Spec §3.5: { wave, totalWaves }
+      expect(eventDetail).toEqual({ wave: 1, totalWaves: 5 });
     });
   });
 });

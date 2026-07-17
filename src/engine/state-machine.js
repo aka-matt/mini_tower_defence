@@ -3,6 +3,7 @@
 
 import { PLAYER_CONFIG } from '../config/game-config.js';
 import { totalWaves } from '../config/waves.js';
+import { towerIdForSlot } from './ids.js';
 
 // Game states
 export const GameStateType = Object.freeze({
@@ -14,7 +15,7 @@ export const GameStateType = Object.freeze({
   DESTROYED: 'destroyed',
 });
 
-// Events
+// Events that drive state transitions
 export const GameEvent = Object.freeze({
   START: 'start',
   PAUSE: 'pause',
@@ -27,6 +28,7 @@ export const GameEvent = Object.freeze({
   WIN: 'win',
   LOSE: 'lose',
   RESTART: 'restart',
+  TICK: 'tick', // advance elapsedMs by payload.deltaMs
 });
 
 /**
@@ -41,6 +43,9 @@ export function createInitialState() {
     wave: 0,
     elapsedMs: 0,
     score: 0,
+    // Cumulative gold earned from kills (separate from current balance,
+    // which drops when towers are built). Used by the score formula.
+    totalKillRewardGold: 0,
     towers: [],
     enemies: [],
     projectiles: [],
@@ -64,14 +69,23 @@ function deepFreeze(obj) {
 }
 
 /**
- * Transitions game state based on event (pure function)
+ * Transitions game state based on event (pure function).
+ * Pause/Resume leave elapsedMs alone; the game-loop `tick` event advances it.
  * @param {GameState} state - Current game state
  * @param {string} event - Event type
- * @param {Object} payload - Optional event payload
- * @returns {GameState} New game state (frozen)
+ * @param {Object} payload - Event payload
+ * @returns {GameState} New frozen state
  */
 export function transitionGameState(state, event, payload = {}) {
-  const { state: currentState, lives, wave, gold, towers } = state;
+  const {
+    state: currentState,
+    lives,
+    wave,
+    gold,
+    totalKillRewardGold,
+    elapsedMs,
+    towers,
+  } = state;
 
   switch (event) {
     case GameEvent.START:
@@ -116,7 +130,11 @@ export function transitionGameState(state, event, payload = {}) {
     case GameEvent.ENEMY_KILL:
       if (currentState === GameStateType.RUNNING) {
         const { reward } = payload;
-        return deepFreeze({ ...state, gold: gold + reward });
+        return deepFreeze({
+          ...state,
+          gold: gold + reward,
+          totalKillRewardGold: totalKillRewardGold + reward,
+        });
       }
       break;
 
@@ -124,7 +142,10 @@ export function transitionGameState(state, event, payload = {}) {
       if (currentState === GameStateType.IDLE || currentState === GameStateType.RUNNING) {
         const { towerCost, towerData } = payload;
         if (gold >= towerCost) {
-          const newTowers = [...towers, { ...towerData, id: `tower-slot-${towerData.slotId}` }];
+          const newTowers = [
+            ...towers,
+            { ...towerData, id: towerIdForSlot(towerData.slotId) },
+          ];
           return deepFreeze({ ...state, gold: gold - towerCost, towers: newTowers });
         }
       }
@@ -133,7 +154,7 @@ export function transitionGameState(state, event, payload = {}) {
     case GameEvent.SELL:
       if (currentState === GameStateType.IDLE || currentState === GameStateType.RUNNING) {
         const { towerId, refundAmount } = payload;
-        const newTowers = towers.filter(t => t.id !== towerId);
+        const newTowers = towers.filter((t) => t.id !== towerId);
         return deepFreeze({ ...state, gold: gold + refundAmount, towers: newTowers });
       }
       break;
@@ -152,6 +173,13 @@ export function transitionGameState(state, event, payload = {}) {
 
     case GameEvent.RESTART:
       return createInitialState();
+
+    case GameEvent.TICK:
+      if (currentState === GameStateType.RUNNING) {
+        const advance = Math.max(0, payload.deltaMs || 0);
+        return deepFreeze({ ...state, elapsedMs: elapsedMs + advance });
+      }
+      break;
   }
 
   // Invalid transitions return current state unchanged

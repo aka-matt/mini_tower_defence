@@ -1,7 +1,7 @@
 // Effect entity - pure functions for visual effects
 // Effects are transient visual elements like death puffs and hit sparks
 
-let _effectIdCounter = 0;
+import { nextEffectId, resetIdCounters } from '../engine/ids.js';
 
 /**
  * Effect types available
@@ -16,13 +16,12 @@ export const EffectType = Object.freeze({
  * @param {string} type - Effect type from EffectType
  * @param {number} x - X position
  * @param {number} y - Y position
- * @param {string} id - Optional stable unique ID
+ * @param {string} [id] - Optional stable unique ID
  * @returns {Effect} Frozen effect object
  */
 export function createEffect(type, x, y, id) {
-  _effectIdCounter++;
   return Object.freeze({
-    id: id || `effect-${_effectIdCounter}`,
+    id: id || nextEffectId(),
     type,
     x,
     y,
@@ -33,11 +32,11 @@ export function createEffect(type, x, y, id) {
 }
 
 /**
- * Reset effect ID counter (for deterministic testing)
+ * Reset effect ID counter (for deterministic testing).
  * @param {number} value - New counter value
  */
 export function resetEffectIdCounter(value = 0) {
-  _effectIdCounter = value;
+  resetIdCounters({ effect: value });
 }
 
 /**

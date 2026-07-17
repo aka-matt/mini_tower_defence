@@ -2,6 +2,7 @@
 // Pure function with no side effects
 
 import { ENEMY_STATS } from '../config/game-config.js';
+import { nextEnemyId } from './ids.js';
 
 /**
  * Create a wave controller
@@ -25,16 +26,14 @@ export function createWaveController(waves) {
 /**
  * Spawn a single enemy
  * @param {Wave} wave - Current wave definition
- * @param {number} waveIndex - 0-indexed wave number
  * @param {number} spawnedCount - Current spawned count (before this spawn)
  * @returns {Object} Spawn object with id, type, and spec
  */
-function spawnEnemy(wave, waveIndex, spawnedCount) {
+function spawnEnemy(wave, spawnedCount) {
   const enemyType = wave.enemies[spawnedCount];
   const enemySpec = ENEMY_STATS[enemyType];
-  const enemyId = `wave-${waveIndex + 1}-enemy-${spawnedCount + 1}`;
   return {
-    id: enemyId,
+    id: nextEnemyId(),
     type: enemyType,
     spec: { ...enemySpec, type: enemyType },
   };
@@ -94,7 +93,7 @@ export function updateWaveController(controller, deltaSeconds, aliveEnemyCount) 
         events.push({ type: 'wave_start', wave: currentWaveIndex + 1 });
         // Spawn first enemy immediately
         if (newSpawnedCount < currentWave.enemies.length) {
-          spawns.push(spawnEnemy(currentWave, currentWaveIndex, newSpawnedCount));
+          spawns.push(spawnEnemy(currentWave, newSpawnedCount));
           newSpawnedCount++;
           newSpawnTimer = 0; // Reset so spawning case spawns at correct intervals
         }
@@ -117,7 +116,7 @@ export function updateWaveController(controller, deltaSeconds, aliveEnemyCount) 
         events.push({ type: 'wave_start', wave: currentWaveIndex + 1 });
         // Spawn first enemy immediately
         if (newSpawnedCount < currentWave.enemies.length) {
-          spawns.push(spawnEnemy(currentWave, currentWaveIndex, newSpawnedCount));
+          spawns.push(spawnEnemy(currentWave, newSpawnedCount));
           newSpawnedCount++;
           newSpawnTimer = 0; // Reset so spawning case spawns at correct intervals
         }
@@ -147,7 +146,7 @@ export function updateWaveController(controller, deltaSeconds, aliveEnemyCount) 
       // Check if it's time to spawn
       while (newSpawnTimer >= currentWave.interval && newSpawnedCount < currentWave.enemies.length) {
         newSpawnTimer -= currentWave.interval;
-        spawns.push(spawnEnemy(currentWave, currentWaveIndex, newSpawnedCount));
+        spawns.push(spawnEnemy(currentWave, newSpawnedCount));
         newSpawnedCount++;
       }
       break;

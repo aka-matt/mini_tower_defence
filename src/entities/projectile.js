@@ -1,7 +1,7 @@
 // Projectile entity - pure functions, no Canvas/DOM dependencies
 // Projectiles travel toward target and deal damage on hit
 
-let _projectileIdCounter = 0;
+import { nextProjectileId, resetIdCounters } from '../engine/ids.js';
 
 /**
  * Create a projectile.
@@ -14,9 +14,8 @@ let _projectileIdCounter = 0;
  * @returns {Projectile} Frozen projectile object
  */
 export function createProjectile(spec, targetId, startPos) {
-  _projectileIdCounter++;
   return Object.freeze({
-    id: `projectile-${_projectileIdCounter}`,
+    id: nextProjectileId(),
     targetId,
     damage: spec.damage,
     damageType: spec.damageType,
@@ -30,10 +29,11 @@ export function createProjectile(spec, targetId, startPos) {
 
 /**
  * Reset projectile ID counter (for deterministic testing).
+ * Backed by the centralized ids.js counter.
  * @param {number} value - New counter value
  */
 export function resetProjectileIdCounter(value = 0) {
-  _projectileIdCounter = value;
+  resetIdCounters({ projectile: value });
 }
 
 /**

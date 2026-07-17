@@ -17,7 +17,7 @@ npm install mini-tower-defense
   import 'mini-tower-defense';
 
   const game = document.querySelector('mini-tower-defense');
-  game.addEventListener('game-win', () => console.log('Victory!'));
+  game.addEventListener('game-win', (e) => console.log('Victory!', e.detail));
   game.start();
 </script>
 
@@ -68,23 +68,21 @@ The `dist/mini-tower-defense.js` single file works without any build tools:
 
 ## Events
 
-All events bubble and are composed (cross Shadow DOM boundary).
+All events use `CustomEvent`, `bubbles: true`, `composed: true` (cross Shadow DOM).
 
 | Event | Detail | Description |
 |-------|--------|-------------|
-| `game-start` | `{}` | Game started |
-| `game-pause` | `{}` | Game paused |
-| `game-resume` | `{}` | Game resumed |
-| `game-restart` | `{}` | Game restarted |
-| `game-win` | `{}` | Victory achieved |
-| `game-lose` | `{}` | Defeat |
-| `game-error` | `{error: string}` | Error occurred |
-| `wave-start` | `{wave: number}` | Wave started |
-| `wave-complete` | `{wave: number}` | Wave completed |
-| `tower-built` | `{towerId, towerType}` | Tower built |
-| `tower-sold` | `{towerId, refund}` | Tower sold |
-| `enemy-leaked` | `{enemyId, livesRemaining}` | Enemy reached end |
-| `enemy-killed` | `{enemyId, reward}` | Enemy killed |
+| `game-start` | `{ wave }` | Game entered the running state |
+| `game-pause` | `{ elapsedMs }` | Game paused (user, programmatic, or auto on tab hide) |
+| `game-resume` | `{ elapsedMs }` | Game resumed |
+| `game-win` | `{ elapsedMs, remainingLives, gold, score }` | All 5 waves cleared |
+| `game-lose` | `{ elapsedMs, completedWave, score }` | Castle lives reached 0 |
+| `game-error` | `{ code, message }` | Audio / render / asset failure. `code` is one of `AUDIO_DECODE_FAILED`, `RENDER_ERROR`, etc. |
+| `wave-start` | `{ wave, totalWaves }` | Wave N begins spawning |
+| `wave-complete` | `{ wave, remainingLives, gold }` | All enemies for wave N cleared |
+| `tower-built` | `{ slotId, towerType, cost, gold }` | Tower placed on a slot |
+| `tower-sold` | `{ slotId, towerType, refund, gold }` | Tower removed (60% cost refund) |
+| `enemy-leaked` | `{ enemyType, damage, remainingLives }` | Enemy reached the castle |
 
 ## CSS Variables
 

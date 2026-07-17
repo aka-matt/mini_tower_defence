@@ -1,9 +1,12 @@
 /**
- * ModalController - manages modal dialogs for victory, defeat, and pause states
- * Uses role="dialog" and aria-modal="true" for accessibility
+ * ModalController - manages modal dialogs for victory, defeat, and pause states.
+ * Uses role="dialog" and aria-modal="true" for accessibility.
+ *
+ * Spec §13 requires textContent for all user-facing strings; this module
+ * builds modal bodies with createElement rather than innerHTML strings.
  */
 
-import { calculateScore } from '../config/game-config.js';
+import { calculateScore } from '../engine/score.js';
 
 /**
  * @typedef {Object} I18nMap
@@ -11,6 +14,13 @@ import { calculateScore } from '../config/game-config.js';
  * @property {string} defeat
  * @property {string} resume
  * @property {string} restart
+ * @property {string} pause
+ * @property {string} [killsLabel]
+ * @property {string} [livesBonusLabel]
+ * @property {string} [timeBonusLabel]
+ * @property {string} [totalLabel]
+ * @property {string} [wavesCompletedLabel]
+ * @property {string} [scoreLabel]
  */
 
 /**
@@ -21,7 +31,7 @@ import { calculateScore } from '../config/game-config.js';
  * @property {number} [wave]
  * @property {number} [totalWaves]
  * @property {number} [elapsedMs]
- * @property {number} [score]
+ * @property {number} [totalKillRewardGold]
  */
 
 export class ModalController {
@@ -54,9 +64,7 @@ export class ModalController {
   _bindEvents() {
     if (this._resumeButton) {
       const handler = () => {
-        if (this._onResume) {
-          this._onResume();
-        }
+        if (this._onResume) this._onResume();
       };
       this._resumeButton.addEventListener('click', handler);
       this._boundHandlers.push({ button: this._resumeButton, handler });
@@ -64,9 +72,7 @@ export class ModalController {
 
     if (this._restartButton) {
       const handler = () => {
-        if (this._onRestart) {
-          this._onRestart();
-        }
+        if (this._onRestart) this._onRestart();
       };
       this._restartButton.addEventListener('click', handler);
       this._boundHandlers.push({ button: this._restartButton, handler });
@@ -74,161 +80,147 @@ export class ModalController {
   }
 
   /**
-   * Show victory modal
+   * Append a labeled score row with safe textContent.
+   * @returns {HTMLDivElement}
+   */
+  _appendRow(parent, label, value, { emphasis } = {}) {
+    const row = document.createElement('div');
+    row.className = emphasis ? 'score-row total' : 'score-row';
+    const labelEl = document.createElement('span');
+    labelEl.textContent = label;
+    const valueEl = document.createElement('span');
+    valueEl.textContent = String(value);
+    row.appendChild(labelEl);
+    row.appendChild(valueEl);
+    parent.appendChild(row);
+    return row;
+  }
+
+  /**
+   * Clear all children of a node using removeChild (safe in any DOM).
+   * @param {Element} node
+   */
+  _clearNode(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  /**
+   * Show victory modal.
    * @param {GameSnapshot} snapshot
    */
   showVictory(snapshot) {
     if (!this._modal || !this._modalContent) return;
 
     const score = calculateScore({
-      totalKillRewardGold: snapshot.gold || 0,
+      outcome: 'win',
+      totalKillRewardGold: snapshot.totalKillRewardGold || 0,
       lives: snapshot.lives || 0,
       elapsedMs: snapshot.elapsedMs || 0,
       completedWave: snapshot.wave || 0,
     });
 
-    // Build modal content
     this._modalTitle.textContent = this._i18n.victory || 'Victory!';
     this._modalTitle.classList.remove('defeat');
 
-    this._modalBody.innerHTML = `
-      <div class="score-breakdown">
-        <div class="score-row">
-          <span>Kills:</span>
-          <span>${score.baseKillScore}</span>
-        </div>
-        <div class="score-row">
-          <span>Lives Bonus:</span>
-          <span>${score.livesBonus}</span>
-        </div>
-        <div class="score-row">
-          <span>Time Bonus:</span>
-          <span>${score.timeBonus}</span>
-        </div>
-        <div class="score-row total">
-          <span>Total:</span>
-          <span>${score.winScore}</span>
-        </div>
-      </div>
-    `;
+    this._clearNode(this._modalBody);
+    const breakdown = document.createElement('div');
+    breakdown.className = 'score-breakdown';
 
-    // Show restart button, hide resume (victory has no resume)
-    if (this._resumeButton) {
-      this._resumeButton.hidden = true;
-    }
-    if (this._restartButton) {
-      this._restartButton.hidden = false;
-    }
+    this._appendRow(breakdown, this._i18n.killsLabel || 'Kills:', score.baseKillScore);
+    this._appendRow(breakdown, this._i18n.livesBonusLabel || 'Lives Bonus:', score.livesBonus);
+    this._appendRow(breakdown, this._i18n.timeBonusLabel || 'Time Bonus:', score.timeBonus);
+    this._appendRow(breakdown, this._i18n.totalLabel || 'Total:', score.winScore, {
+      emphasis: true,
+    });
 
-    // Set ARIA attributes
+    this._modalBody.appendChild(breakdown);
+
+    if (this._resumeButton) this._resumeButton.hidden = true;
+    if (this._restartButton) this._restartButton.hidden = false;
+
     this._modal.setAttribute('role', 'dialog');
     this._modal.setAttribute('aria-modal', 'true');
     this._modal.setAttribute('aria-labelledby', 'modal-title');
 
-    // Show modal
     this._modal.hidden = false;
-
-    // Focus restart button for keyboard accessibility
     this._restartButton?.focus();
   }
 
   /**
-   * Show defeat modal
+   * Show defeat modal.
    * @param {GameSnapshot} snapshot
    */
   showDefeat(snapshot) {
     if (!this._modal || !this._modalContent) return;
 
     const score = calculateScore({
-      totalKillRewardGold: snapshot.gold || 0,
+      outcome: 'lose',
+      totalKillRewardGold: snapshot.totalKillRewardGold || 0,
       lives: snapshot.lives || 0,
       elapsedMs: snapshot.elapsedMs || 0,
       completedWave: snapshot.wave || 0,
     });
 
-    // Build modal content
     this._modalTitle.textContent = this._i18n.defeat || 'Defeat';
     this._modalTitle.classList.add('defeat');
 
-    this._modalBody.innerHTML = `
-      <div class="score-breakdown">
-        <div class="score-row">
-          <span>Waves Completed:</span>
-          <span>${snapshot.wave || 0}</span>
-        </div>
-        <div class="score-row">
-          <span>Kills:</span>
-          <span>${score.baseKillScore}</span>
-        </div>
-        <div class="score-row total">
-          <span>Score:</span>
-          <span>${score.loseScore}</span>
-        </div>
-      </div>
-    `;
+    this._clearNode(this._modalBody);
+    const breakdown = document.createElement('div');
+    breakdown.className = 'score-breakdown';
 
-    // Show restart button, hide resume (defeat has no resume)
-    if (this._resumeButton) {
-      this._resumeButton.hidden = true;
-    }
-    if (this._restartButton) {
-      this._restartButton.hidden = false;
-    }
+    this._appendRow(
+      breakdown,
+      this._i18n.wavesCompletedLabel || 'Waves Completed:',
+      snapshot.wave || 0
+    );
+    this._appendRow(breakdown, this._i18n.killsLabel || 'Kills:', score.baseKillScore);
+    this._appendRow(breakdown, this._i18n.scoreLabel || 'Score:', score.loseScore, {
+      emphasis: true,
+    });
 
-    // Set ARIA attributes
+    this._modalBody.appendChild(breakdown);
+
+    if (this._resumeButton) this._resumeButton.hidden = true;
+    if (this._restartButton) this._restartButton.hidden = false;
+
     this._modal.setAttribute('role', 'dialog');
     this._modal.setAttribute('aria-modal', 'true');
     this._modal.setAttribute('aria-labelledby', 'modal-title');
 
-    // Show modal
     this._modal.hidden = false;
-
-    // Focus restart button
     this._restartButton?.focus();
   }
 
   /**
-   * Show paused modal
+   * Show paused modal.
    */
   showPaused() {
     if (!this._modal || !this._modalContent) return;
 
-    // Simple paused message
     this._modalTitle.textContent = this._i18n.pause || 'Paused';
     this._modalTitle.classList.remove('defeat');
-    this._modalBody.innerHTML = '';
+    this._clearNode(this._modalBody);
 
-    // Show both resume and restart buttons
-    if (this._resumeButton) {
-      this._resumeButton.hidden = false;
-    }
-    if (this._restartButton) {
-      this._restartButton.hidden = false;
-    }
+    if (this._resumeButton) this._resumeButton.hidden = false;
+    if (this._restartButton) this._restartButton.hidden = false;
 
-    // Set ARIA attributes
     this._modal.setAttribute('role', 'dialog');
     this._modal.setAttribute('aria-modal', 'true');
     this._modal.setAttribute('aria-labelledby', 'modal-title');
 
-    // Show modal
     this._modal.hidden = false;
-
-    // Focus resume button
     this._resumeButton?.focus();
   }
 
   /**
-   * Hide the modal
+   * Hide the modal.
    */
   hide() {
-    if (this._modal) {
-      this._modal.hidden = true;
-    }
+    if (this._modal) this._modal.hidden = true;
   }
 
   /**
-   * Set callback for resume action
+   * Set callback for resume action.
    * @param {function(): void} callback
    */
   onResume(callback) {
@@ -236,7 +228,7 @@ export class ModalController {
   }
 
   /**
-   * Set callback for restart action
+   * Set callback for restart action.
    * @param {function(): void} callback
    */
   onRestart(callback) {
@@ -247,7 +239,6 @@ export class ModalController {
    * Cleanup
    */
   destroy() {
-    // Remove event listeners
     for (const { button, handler } of this._boundHandlers) {
       button.removeEventListener('click', handler);
     }

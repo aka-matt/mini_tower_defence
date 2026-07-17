@@ -144,17 +144,18 @@ describe('State Machine', () => {
   describe('build event', () => {
     it('should deduct gold and add tower when enough gold', () => {
       const running = { ...createInitialState(), state: GameStateType.RUNNING, gold: 100 };
-      const towerData = { type: 'archer', x: 100, y: 200 };
+      const towerData = { type: 'archer', slotId: 0, x: 100, y: 200 };
       const next = transitionGameState(running, GameEvent.BUILD, { towerCost: 60, towerData });
 
       expect(next.gold).toBe(40);
       expect(next.towers).toHaveLength(1);
       expect(next.towers[0].type).toBe('archer');
+      expect(next.towers[0].id).toBe('tower-slot-0');
     });
 
     it('should not build when insufficient gold', () => {
       const running = { ...createInitialState(), state: GameStateType.RUNNING, gold: 50 };
-      const towerData = { type: 'archer', x: 100, y: 200 };
+      const towerData = { type: 'archer', slotId: 0, x: 100, y: 200 };
       const next = transitionGameState(running, GameEvent.BUILD, { towerCost: 60, towerData });
 
       expect(next.gold).toBe(50);
