@@ -138,9 +138,6 @@ canvas {
 /* Build Menu */
 .build-menu {
   position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   gap: 12px;
   padding: 12px 16px;
@@ -151,6 +148,80 @@ canvas {
 
 .build-menu[hidden] {
   display: none;
+}
+
+/* Tower Cards */
+.tower-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  min-width: 90px;
+}
+
+.tower-card[hidden] {
+  display: none;
+}
+
+.tower-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.tower-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mtd-text);
+  text-align: center;
+}
+
+.tower-cost {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mtd-gold);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gold-icon {
+  font-size: 12px;
+}
+
+.tower-button {
+  background: var(--mtd-accent);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  transition: background 0.2s, transform 0.1s;
+  width: 100%;
+}
+
+.tower-button:hover:not(:disabled) {
+  background: #3a8eef;
+}
+
+.tower-button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.tower-button:disabled {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.4);
+  cursor: not-allowed;
+}
+
+.tower-button:focus {
+  outline: 2px solid white;
+  outline-offset: 2px;
 }
 
 /* Announcement */
