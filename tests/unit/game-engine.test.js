@@ -91,9 +91,14 @@ describe('State Machine', () => {
     });
 
     it('should transition to won when wave reaches 5', () => {
-      const running = { ...createInitialState(), state: GameStateType.RUNNING, wave: 4 };
-      const next = transitionGameState(running, GameEvent.WAVE_COMPLETE);
+      // Wave 4 complete -> wave 5, still running
+      let running = { ...createInitialState(), state: GameStateType.RUNNING, wave: 4 };
+      let next = transitionGameState(running, GameEvent.WAVE_COMPLETE);
+      expect(next.state).toBe(GameStateType.RUNNING);
+      expect(next.wave).toBe(5);
 
+      // Wave 5 complete -> won
+      next = transitionGameState({ ...running, wave: 5 }, GameEvent.WAVE_COMPLETE);
       expect(next.state).toBe(GameStateType.WON);
       expect(next.wave).toBe(5);
     });

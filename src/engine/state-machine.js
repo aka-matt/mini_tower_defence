@@ -94,7 +94,7 @@ export function transitionGameState(state, event, payload = {}) {
     case GameEvent.WAVE_COMPLETE:
       if (currentState === GameStateType.RUNNING) {
         const nextWave = wave + 1;
-        if (nextWave >= totalWaves) {
+        if (nextWave > totalWaves) {
           // All waves completed - win
           return deepFreeze({ ...state, state: GameStateType.WON, wave: totalWaves });
         }
